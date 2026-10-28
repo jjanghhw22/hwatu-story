@@ -1,0 +1,11 @@
+<!doctype html><html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"><title>마지막 패 · 골목 이발소</title><style>
+/* 정렬 책임은 Phaser(Scale.FIT + CENTER_BOTH) 한 곳에 둔다. #app은 화면 전체를 차지하는 일반 블록이며 flex/grid/transform으로 위치를 보정하지 않는다. */
+/* 한글 폰트는 로컬 포함(나눔고딕·나눔붓, SIL OFL 1.1 — public/assets/fonts/OFL.txt). 시스템 폰트 차이로 배치가 흔들리지 않게 main.ts가 로드를 기다린 뒤 게임을 시작한다. */
+@font-face{font-family:"NanumGothic";src:url("assets/fonts/NanumGothic-Regular.ttf") format("truetype");font-weight:400;font-display:block}
+@font-face{font-family:"NanumGothic";src:url("assets/fonts/NanumGothic-Bold.ttf") format("truetype");font-weight:700;font-display:block}
+@font-face{font-family:"NanumBrushScript";src:url("assets/fonts/NanumBrushScript-Regular.ttf") format("truetype");font-weight:400;font-display:block}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;width:100%;height:100%;background:#120d0a;overflow:hidden;touch-action:none;overscroll-behavior:none}
+#app{display:block;position:relative;width:100%;height:100%;margin:0;padding:0}
+canvas{display:block}
+</style></head><body><div id="app"></div><script type="module" src="/src/main.ts"></script></body></html>

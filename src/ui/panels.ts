@@ -1,0 +1,121 @@
+// 플레이어 정보(초상화·선 배지·이름·상태 칩·점수 배지·손패 뒷면·대사 자리)와 획득 패 패널(한 줄 4묶음·장수 배지·박 경고). 테마: 어두운 녹색 패널 + 황동 테두리.
+// 자리·크기는 layout.ts(INFO, scoreBadgeRect, activeBoxRect, flowChips, capturedRects)가 정한다.
+import type { GukjinChoice } from '../game';
+import type { Declared, Score } from '../score';
+import type { Character, Mood } from '../character';
+import { drawMiniBack, drawMiniCard } from './cardView';
+import { CAPTURED_EMPTY_ALPHA, CAPTURED_TAG_H, CHIP_COLORS, COUNT_BADGE, type CapturedRects, INFO, MARGIN, type Rect, activeBoxRect, capturedRects, flowChips, oppHandLayout, scoreBadgeRect, speechZone } from './layout';
+import { type PortraitView, drawPortrait } from './portrait';
+import { COLORS, type UI, box, chip, countBadge, label, measureText, outlined, panel } from './widgets';
+
+export type PlayerInfo = {
+  character: Character; mood: Mood; score: Score; goCount: number; gukjin: GukjinChoice | null;
+  handCount?: number;      // 상대만: 붉은 뒷면으로 장수만 표시(내용은 공개하지 않음)
+  /** 상대만: 뒷면을 그릴지 여부(패 나누기 연출 중 아직 도착하지 않은 장은 false). 자리는 handCount 기준으로 고정. */
+  handVisible?: readonly boolean[];
+  active: boolean;         // 현재 차례
+  activeText: string;      // 차례 표시 문구
+  ppeokCount?: number;     // 이 플레이어가 만든 뻑 묶음 수
+  declared?: readonly Declared[]; // 흔들기/폭탄 선언(월별)
+  flipChances?: number;    // 손패 없이 더미만 뒤집기 기회(카드가 아닌 카운터)
+  /** 상대 패널: 큰 초상화·대사 자리·손패 뒷면 줄. 내 패널: 작은 초상화 한 줄. */
+  big: boolean;
+  /** 이 판의 선(先). 지금은 호출하는 쪽이 플레이어 0에 true를 넘긴다(선 교대 규칙 없음). */
+  first: boolean;
+};
+
+export type StatusChip = { text: string; color: number; alpha?: number };
+/** 상태 칩 목록: 고 칩은 항상(0이면 흐리게), 나머지는 값이 있을 때만. 순수 함수. */
+export function statusChips(p: Pick<PlayerInfo, 'goCount' | 'declared' | 'flipChances' | 'gukjin' | 'ppeokCount'>): StatusChip[] {
+  const decl = p.declared ?? [];
+  const shakes = decl.filter(d => d.kinds.includes('흔들기')).length;
+  const bombs = decl.filter(d => d.kinds.includes('폭탄')).length;
+  const out: StatusChip[] = [{ text: `${p.goCount}고`, color: CHIP_COLORS.go, alpha: p.goCount > 0 ? 1 : 0.35 }];
+  if (shakes) out.push({ text: `흔들기 ${shakes}`, color: CHIP_COLORS.shake });
+  if (bombs) out.push({ text: `폭탄 ${bombs}`, color: CHIP_COLORS.bomb });
+  if (p.flipChances) out.push({ text: `뒤집기 ${p.flipChances}`, color: CHIP_COLORS.other });
+  if (p.gukjin) out.push({ text: `국진→${p.gukjin === '피' ? '쌍피' : '열끗'}`, color: CHIP_COLORS.other });
+  if (p.ppeokCount) out.push({ text: `뻑 ${p.ppeokCount}`, color: CHIP_COLORS.other });
+  return out;
+}
+
+/**
+ * 정보 패널. 왼쪽 구역: 초상화 → (선 배지) 이름 → 상태 칩(넘치면 다음 줄). 오른쪽 구역: 점수 배지(상대는 그 아래 손패 뒷면 줄, 말풍선 자리는 그 왼쪽).
+ * 점수 숫자 글자(강조 연출용)와 초상화를 돌려준다.
+ */
+export function drawPlayerInfo(ui: UI, reg: Rect, p: PlayerInfo): { scoreText: Phaser.GameObjects.Text; portrait: PortraitView } {
+  panel(ui, MARGIN, reg.y + 3, reg.w - MARGIN * 2, reg.h - 6, 'dark', p.active);
+  const r = p.big ? INFO.portraitBig : INFO.portraitSmall;
+  const cy = reg.y + reg.h / 2;
+  const portrait = drawPortrait(ui, MARGIN + 14 + r, cy, r, p.character, p.mood, p.active);
+  const xLeft = MARGIN + 26 + r * 2;
+  let x = xLeft;
+  const nameY = p.big ? reg.y + 6 : reg.y + 8, nameSize = p.big ? 17 : 15;
+  if (p.first) {
+    const d = INFO.firstBadge.d, bcy = nameY + nameSize / 2 + 1;
+    const c = ui.scene.add.circle(x + d / 2, bcy, d / 2, INFO.firstBadge.color).setStrokeStyle(1, 0xffffff, 0.6);
+    ui.layer.add(c);
+    label(ui, x + d / 2, bcy, '선', 12, '#ffffff', d, [0.5, 0.5], true);
+    x += d + 6;
+  }
+  const name = label(ui, x, nameY, p.character.name, nameSize, COLORS.text, 200, [0, 0], true);
+  // 점수 배지(오른쪽 끝): 검은 바탕 + 황동 테두리 + 금색 큰 숫자 + "점"
+  const sb = scoreBadgeRect(reg, p.big);
+  box(ui, sb.x, sb.y, sb.w, sb.h, 0x111111, 0.9, COLORS.brass);
+  const unit = label(ui, sb.x + sb.w - 10, sb.y + sb.h / 2 + 3, '점', 14, COLORS.gold, 30, [1, 0.5], true);
+  const scoreText = label(ui, sb.x + sb.w - 10 - unit.width - 3, sb.y + sb.h / 2, String(p.score.total), 26, COLORS.gold, 80, [1, 0.5], true);
+  // 상태 칩: 왼쪽 구역 안에서 흐름 배치. 상대는 이름 아래 줄, 나는 이름 오른쪽(넘치면 아랫줄)
+  const chips = statusChips(p);
+  const widths = chips.map(c => measureText(ui.scene, c.text, INFO.chip.size, true));
+  const act = activeBoxRect(reg, p.big);
+  const maxX = p.big ? speechZone(reg).x - 6 : act.x - 8;
+  const rects = p.big ? flowChips(widths, xLeft, reg.y + 30, maxX) : flowChips(widths, x + name.width + 10, nameY, maxX, xLeft);
+  chips.forEach((c, i) => chip(ui, rects[i], c.text, c.color, c.alpha ?? 1));
+  if (p.active) { box(ui, act.x, act.y, act.w, act.h, 0xe0b64f); label(ui, act.x + act.w / 2, act.y + act.h / 2, p.activeText, 13, COLORS.dark, act.w, [0.5, 0.5], true); }
+  if (p.big && p.handCount !== undefined) oppHandLayout(reg, p.handCount, p.active).forEach((h, i) => { if (p.handVisible?.[i] === false) return; drawMiniBack(ui, h.x, h.y, h.w, h.h); });
+  return { scoreText, portrait };
+}
+
+export type CapturedOptions = {
+  /** 연출 중이라 숨길 카드 id(자리는 계산한다). */
+  hidden?: ReadonlySet<number>;
+  /** 족보 완성 직전 힌트("고도리 1장" 등). 해당 묶음 위 글자 줄에 붙인다. */
+  near?: readonly string[];
+  /** 패널을 누르면 큰 카드 목록을 연다(입력 가능한 안정된 상태에서만 넘긴다). */
+  onTap?: () => void;
+  /** 카드를 그릴 때 자리 이동 연출을 거는 훅(SlideTracker.place). 없으면 바로 그린다. */
+  place?: (key: string, r: Rect, draw: (ui: UI) => void) => void;
+  /** 박 위험(turnPlan.bakWarnings): 피박은 피 묶음, 광박은 광 묶음 왼쪽에 빨간 글자로 상시 표시. */
+  warnings?: readonly ('피박' | '광박')[];
+};
+const HINT_CELL: Record<string, '광' | '열끗' | '띠'> = { '삼광': '광', '고도리': '열끗', '홍단': '띠', '청단': '띠', '초단': '띠' };
+const WARN_CELL: Record<'피박' | '광박', '피' | '광'> = { '피박': '피', '광박': '광' };
+/** 박 경고 글자 크기. */
+export const BAK_WARN_SIZE = 18;
+
+/**
+ * 획득 패: 한 줄 4묶음(광·열끗·띠·피). 묶음 안 카드는 비껴 겹친 더미, 오른쪽 아래 장수 배지(피는 가치), 위에 완성 족보·힌트 한 줄.
+ * 양쪽 패널이 같은 기준(capturedRects)으로 배치되며 카드 id별 자리는 획득 연출의 도착점과 같다. 0장이면 배지도 카드도 없다.
+ */
+export function drawCaptured(ui: UI, reg: Rect, score: Score, o: CapturedOptions = {}): CapturedRects {
+  const total = score.광.cards.length + score.열끗.cards.length + score.띠.cards.length + score.피.cards.length;
+  // 0장이면 배경을 옅게(테두리 유지)해 판 시작 직후 화면이 무겁지 않게 한다
+  const outer = panel(ui, MARGIN, reg.y, reg.w - MARGIN * 2, reg.h, 'dark', false, total === 0 ? CAPTURED_EMPTY_ALPHA : 1);
+  if (o.onTap) outer.setInteractive({ useHandCursor: true }).on('pointerdown', o.onTap);
+  const lay = capturedRects(reg, { 광: score.광.cards, 열끗: score.열끗.cards, 띠: score.띠.cards, 피: score.피.cards });
+  for (const cell of lay.cells) {
+    const g = score[cell.kind];
+    const tags = [...g.bonuses, ...(o.near ?? []).filter(h => HINT_CELL[h.split(' ')[0]] === cell.kind)];
+    if (tags.length) label(ui, cell.x + 4, cell.y, tags.join(' · '), 11, COLORS.gold, cell.w, [0, 0], true);
+    for (const c of g.cards) {
+      if (o.hidden?.has(c.id)) continue;
+      const r = lay.rects.get(c.id)!;
+      const draw = (u: UI) => drawMiniCard(u, r.x, r.y, r.w, r.h, c);
+      if (o.place) o.place(`cap:${c.id}`, r, draw); else draw(ui);
+    }
+    if (g.cards.length) countBadge(ui, cell.x + cell.w - COUNT_BADGE.d / 2 - 2, cell.y + cell.h - COUNT_BADGE.d / 2 - 2, String(cell.kind === '피' ? score.피.value : g.cards.length));
+    const warn = (o.warnings ?? []).find(w => WARN_CELL[w] === cell.kind);
+    if (warn) outlined(ui, cell.x + 2, cell.y + CAPTURED_TAG_H + (cell.h - CAPTURED_TAG_H) / 2, warn, BAK_WARN_SIZE, COLORS.bakWarn, [0, 0.5]);
+  }
+  return lay;
+}
