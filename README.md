@@ -14,6 +14,7 @@ npm.cmd run dev
 
 표시되는 localhost 주소를 브라우저에서 엽니다. index.html 파일을 직접 더블클릭하지 마세요. 종료는 터미널에서 Ctrl+C.
 휴대폰: 세로 고정(화면 비율에 맞춰 디자인 높이 1280~1600을 처음 한 번 정함), 회전하거나 창 크기를 바꾸면 새로고침이 필요합니다. 같은 Wi‑Fi에서 보려면 `npx.cmd vite --host 0.0.0.0`으로 띄우고 PC의 LAN 주소를 엽니다.
+배포: main에 push하면 GitHub Actions(`.github/workflows/pages.yml`)가 테스트·빌드(`VITE_BASE=/hwatu-story/`) 뒤 GitHub Pages로 자동 배포합니다. 주소 https://jjanghhw22.github.io/hwatu-story/ (저장소 https://github.com/jjanghhw22/hwatu-story). 테스트가 실패하면 배포되지 않습니다.
 빌드: `npm.cmd run build`, 테스트: `npm.cmd test`(game, score, scenarios, ai, dialog, ui/layout, ui/cardAssets, ui/turnPlan). AI 대결 집계: `npm.cmd run match -- 200 1`(판 수, 시드). 카드 그림 재생성: `npm.cmd run split-cards`.
 
 ## 이번 버전
