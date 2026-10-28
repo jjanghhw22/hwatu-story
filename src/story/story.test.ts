@@ -57,7 +57,7 @@ test('프롤로그는 4컷, 1장은 before·after 장면이 비어 있지 않고
   assert.ok(ch1.scenes.after.some(s => s.kind === 'line' && s.text === '네 아버지, 예전에 패 좀 만졌다.'));
   assert.equal(ch1.opponentId, 'barber');
   assert.equal(ch1.rewardSkill, 'eye');
-  assert.deepEqual(ch1.unlocks, ['home']);
+  assert.deepEqual(ch1.unlocks, ['home', 'store']);
 });
 
 test('인물·상대: 이름은 바이블대로, 상대 프로필의 인물·정책이 유효', () => {
@@ -72,7 +72,7 @@ test('인물·상대: 이름은 바이블대로, 상대 프로필의 인물·정
     assert.ok(o.characterId in CHARACTERS, id);
     assert.ok(o.thinkMs > 0);
     const policy = resolveOpponent(o);
-    assert.equal(policy.key, o.policy === 'beginner' ? 'beginner' : 'strategic');
+    assert.equal(policy.key, o.policy === 'beginner' ? 'beginner' : o.policy === 'easy' ? 'easy' : 'strategic');
   }
   assert.equal(OPPONENTS.barber.policy, 'beginner');
   assert.equal(OPPONENTS.bonggu.turnLimitMs, 8000);
@@ -92,9 +92,9 @@ test('기술 8개·아이템 10개: id 유일, 수치는 바이블대로', () =>
 
 test('진행 상태: 시작값과 직렬화 왕복', () => {
   const p = initialProgress();
-  assert.deepEqual(p, { day: 1, money: 120000, chapterId: 'prologue', unlockedPlaces: ['barber'], skills: [], focusMax: 100, focus: 100, flags: {} });
-  const back = deserialize(serialize({ ...p, skills: ['eye'], unlockedPlaces: ['barber', 'home'], chapterId: 'ch2', flags: { 'ch1.done': true }, focus: 60 }));
-  assert.deepEqual(back, { ...p, skills: ['eye'], unlockedPlaces: ['barber', 'home'], chapterId: 'ch2', flags: { 'ch1.done': true }, focus: 60 });
+  assert.deepEqual(p, { day: 1, money: 120000, chapterId: 'prologue', unlockedPlaces: ['barber'], skills: [], focusMax: 100, focus: 100, flags: {}, bag: {}, serin: { affinity: 0, visits: 0, lastEventDay: 0, lastVisitDay: 0, pity: 0, seen: [] }, counters: {} });
+  const back = deserialize(serialize({ ...p, skills: ['eye'], unlockedPlaces: ['barber', 'home', 'store'], chapterId: 'ch2', flags: { 'ch1.done': true }, focus: 60 }));
+  assert.deepEqual(back, { ...p, skills: ['eye'], unlockedPlaces: ['barber', 'home', 'store'], chapterId: 'ch2', flags: { 'ch1.done': true }, focus: 60 });
 });
 
 test('진행 상태: 깨진 저장은 초기값, 모르는 id는 걸러내고 범위를 맞춘다', () => {
@@ -140,7 +140,7 @@ test('1장 완료: 눈썰미 획득, 집 열림, 다음 장은 2장, 두 번 적
   const p0 = { ...initialProgress(), chapterId: 'ch1' as const };
   const p1 = completeChapter(p0, chapterById('ch1'));
   assert.deepEqual(p1.skills, ['eye']);
-  assert.deepEqual(p1.unlockedPlaces, ['barber', 'home']);
+  assert.deepEqual(p1.unlockedPlaces, ['barber', 'home', 'store']);
   assert.equal(p1.chapterId, 'ch2');
   assert.ok(isChapterDone(p1, 'ch1') && !isChapterDone(p1, 'ch2'));
   assert.equal(completeChapter(p1, chapterById('ch1')), p1);

@@ -32,8 +32,8 @@ export const FX = {
   scorePulse: 150,
   /** 폭탄 화면 흔들림(연출 줄이기에서는 없음). 최대 100ms. */
   shake: 100, shakeAmp: 0.003,
-  /** 상대 생각 시간, 결과창 항목 간격, 말풍선 표시 시간. */
-  think: 400, resultStep: 260, bubble: 2400,
+  /** 상대 생각 시간, 결과창 항목 간격, 말풍선 표시 시간, 도발 말풍선 뒤 고/스톱 창까지 기다리는 시간. */
+  think: 400, resultStep: 260, bubble: 2400, taunt: 900,
   /** 패 나누기: 한 장 이동 시간, 다음 장 출발 간격(연출 줄이기에서는 ms()로 절반). */
   deal: 140, dealStep: 45,
   /** 먹을 수 있는 손패 화살표의 위아래 왕복 주기(연출 줄이기에서는 움직이지 않음). */
@@ -216,8 +216,8 @@ export class CardFx {
   }
 
   /** 점수 변화: "+2"/"−1" 글자가 (x, y)에서 위로 떠오르며 사라지고, 숫자 글자를 잠깐 키운다. originX 1이면 x를 오른쪽 끝으로(점수 배지 왼쪽 바깥). 기다리지 않는다. */
-  scorePulse(target: Phaser.GameObjects.Text | undefined, x: number, y: number, delta: number, originX = 0) {
-    const t = this.track(this.scene.add.text(x, y, `${delta > 0 ? '+' : '−'}${Math.abs(delta)}`, { fontFamily: FONT, fontSize: 22, color: delta > 0 ? '#f2c45a' : '#e09a9a', stroke: '#1a120c', strokeThickness: 4, fontStyle: 'bold' }).setOrigin(originX, 0.5));
+  scorePulse(target: Phaser.GameObjects.Text | undefined, x: number, y: number, delta: number, originX = 0, text?: string) {
+    const t = this.track(this.scene.add.text(x, y, text ?? `${delta > 0 ? '+' : '−'}${Math.abs(delta)}`, { fontFamily: FONT, fontSize: 22, color: delta > 0 ? '#f2c45a' : '#e09a9a', stroke: '#1a120c', strokeThickness: 4, fontStyle: 'bold' }).setOrigin(originX, 0.5));
     void this.tween({ targets: t, y: y - 18, alpha: 0, duration: this.settings.ms(FX.scorePulse) * 3, delay: 80, ease: 'Quad.easeOut' }).then(() => { if (t.active) this.remove(t); });
     if (target?.active) void this.tween({ targets: target, scaleX: 1.15, scaleY: 1.15, duration: this.settings.ms(FX.scorePulse) / 2, yoyo: true, ease: 'Quad.easeOut' });
   }

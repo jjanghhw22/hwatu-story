@@ -9,14 +9,17 @@ import {type DialogEvent,DialogPolicy,EVENT_MOOD} from './dialog';
 import {CHARACTERS,type Character,MOODS,type Mood,PLAYER} from './character';
 import {type Chapter,chapterById,chapterLabel} from './story/chapters';
 import {OPPONENTS,type OpponentProfile,resolveOpponent} from './story/opponents';
-import {SKILLS} from './story/skills';
-import {type Progress,canSpendFocus,loadProgress,saveProgress,spendFocus,withFocus} from './story/progress';
+import {SKILLS,type SkillId} from './story/skills';
+import {COUNTERS,type Progress,addMoney,bump,canSpendFocus,formatWonDelta,loadProgress,saveProgress,settleStake,skillCostWithBoost,spendFocus,takeFromBag,withFocus} from './story/progress';
+import {FLAGS,itemById} from './story/items';
+import {provokedPolicy} from './story/policies';
+import {type TauntState,afterGoStop,calm,markShown,newTauntState,pickTaunt,shouldTaunt} from './story/taunt';
 import {type TableLaunch,SCENE_KEYS,finishChapterWin,goJourney} from './scenes/flow';
 import {BootScene} from './scenes/boot';
 import {JourneyScene} from './scenes/journey';
 import {StoryScene} from './scenes/story';
 import {BUILD_TAG,CREDITS,NOT_IMPLEMENTED,RULES} from './ui/infoTexts';
-import {BASE_HEIGHT,CARD,type CapturedRects,DESIGN,FLOOR_STACK_TILT,HAND_ARROW,HOLD_LIFT,MARGIN,MAX_HEIGHT,REGIONS,type Rect,type FloorLayout,type SafeInsets,capturedRects,configureLayout,floorLayout,handLayout,oppHandLayout,peekButtonRect,scoreBadgeRect,speechZone} from './ui/layout';
+import {BASE_HEIGHT,CARD,type CapturedRects,DESIGN,FLOOR_STACK_TILT,HAND_ARROW,HOLD_LIFT,MARGIN,MAX_HEIGHT,REGIONS,type Rect,type FloorLayout,type SafeInsets,capturedRects,configureLayout,floorLayout,handLayout,oppHandLayout,scoreBadgeRect,skillBarLayout,speechZone} from './ui/layout';
 import {COLORS,type UI,box,button,label} from './ui/widgets';
 import {drawCardFace,drawChanceCard} from './ui/cardView';
 import {drawCaptured,drawPlayerInfo} from './ui/panels';
@@ -66,8 +69,16 @@ class TableScene extends Phaser.Scene {
   profile:OpponentProfile=OPPONENTS.barber; oppChar:Character=CHARACTERS.barber; chapter?:Chapter;
   /** 집중력(이야기 진행 값, 규칙 상태가 아님): 대결 시작 때 저장된 값을 읽고 판이 끝나면 저장한다. 기술을 쓸 때만 줄어든다. */
   progress:Progress=loadProgress(); focus=0; focusMax=100;
-  /** 눈썰미를 배웠는지와 이 판에 남은 사용 횟수. 안 배웠으면 버튼 자체가 없다. */
-  hasEye=false; eyeUses=0;
+  /** 배운 기술과 이 판에 남은 사용 횟수(배운 순서대로 기술 줄에 버튼). 안 배웠으면 버튼 자체가 없다. */
+  skills:{id:SkillId;uses:number}[]=[];
+  /** 캔커피 효과(다음 대결 첫 기술 비용 −10)가 살아 있는지. 첫 기술을 쓰면 꺼지고 저장한다. */
+  coffeeBoost=false;
+  /** 가방의 포도당 사탕 개수와 이 판 사용 여부(대결당 1회). */
+  candies=0; candyUsed=false;
+  /** 도발 상태(3장 마 사장). tauntNow는 지금 뜬 고/스톱 창이 도발 직후인지("(도발)" 표시). */
+  taunt:TauntState=newTauntState(); tauntNow=false;
+  /** 이 판의 판돈(1점당 원)과 정산된 돈 변화(결과창·지도 표시). */
+  stake=0; moneyDelta=0;
   get names(){return [PLAYER.name,this.oppChar.name];}
   selectable:number[]=[]; peek=false;
   /** 대기 중인 선택의 resolve. 모달 버튼이 이것을 호출해 흐름을 이어간다. */
@@ -119,8 +130,14 @@ class TableScene extends Phaser.Scene {
     this.progress=loadProgress();
     this.focusMax=this.profile.focusMax??this.progress.focusMax;
     this.focus=this.launch.scenario?this.focusMax:Math.min(this.progress.focus,this.focusMax);
-    this.hasEye=!!this.launch.scenario||this.progress.skills.includes('eye');
-    this.eyeUses=this.hasEye?SKILLS.eye.usesPerMatch:0;
+    const learned:SkillId[]=this.launch.scenario?['eye','calmFace']:this.progress.skills;
+    this.skills=learned.map(id=>({id,uses:SKILLS[id].usesPerMatch}));
+    this.coffeeBoost=!this.launch.scenario&&this.progress.flags[FLAGS.coffeeBoost]===true;
+    this.candies=this.launch.scenario?1:(this.progress.bag.glucoseCandy??0);this.candyUsed=false;
+    this.taunt=newTauntState();this.tauntNow=false;
+    this.stake=this.launch.stake??0;this.moneyDelta=0;
+    // 도발형 상대는 고/스톱 정책을 래퍼로 감싼다(도발에 응하면 공격적). 규칙 함수(canDecide/canGo)는 그대로.
+    if(this.profile.taunt)this.opponent=provokedPolicy(this.opponent,()=>this.taunt.provoked);
   }
   preload(){preloadCardAssets(this.load);preloadPortraits(this.load,[this.oppChar,PLAYER]);}
   create(){
@@ -157,18 +174,43 @@ class TableScene extends Phaser.Scene {
   restart(scenario?:string){if(this.restarting)return;this.restarting=true;const next:TableLaunch={...this.launch,scenario};this.scene.restart(next);}
   /** "한 판 더": 시작 데이터 그대로(이야기 장면 반복 없음). */
   again(){if(this.restarting)return;this.restarting=true;this.scene.restart(this.launch);}
-  toJourney(){if(this.restarting)return;this.restarting=true;goJourney(this);}
+  toJourney(){if(this.restarting)return;this.restarting=true;goJourney(this,{moneyDelta:this.moneyDelta||undefined});}
   /** 장 대결 승리 → after 장면 → 보상 → 지도. */
   continueChapter(){if(this.restarting||!this.chapter)return;this.restarting=true;finishChapterWin(this,this.chapter);}
-  /** 판이 끝났을 때 집중력을 저장한다(시나리오 모드는 저장하지 않음). */
-  saveFocus(){if(this.launch.scenario)return;saveProgress(withFocus(loadProgress(),this.focus));}
-  /** 눈썰미: 집중력 20을 쓰고 더미 윗장 1장을 공개한다(판당 2회). 규칙 상태는 바꾸지 않는다(예전 "다음 패 보기"와 같은 동작). */
-  useEye(){
-    const sk=SKILLS.eye, s=this.state;
-    if(this.phase!=='hand'||!this.hasEye||this.eyeUses<=0||!canSpendFocus(this.focus,sk.cost)||s.deck.length===0)return;
-    this.focus=spendFocus(this.focus,sk.cost);this.eyeUses-=1;this.peek=true;
-    const n=s.deck[0];this.message=`${sk.name}: 다음 더미 패는 ${n.month}월 ${n.name} ${n.title}(${kindLabel(n)})`;
+  /** 판이 끝났을 때 집중력·돈(판돈 정산: 최종 점수 × 판돈, 진 쪽은 가진 만큼만)·목욕탕 승수를 저장한다(시나리오 모드는 저장하지 않음). */
+  saveOutcome(){
+    if(this.launch.scenario)return;
+    const r=this.state.result;
+    let p=withFocus(loadProgress(),this.focus);
+    if(r?.outcome==='승리'&&this.stake>0){const m=addMoney(p,settleStake(r.final,this.stake,r.winner===0));p=m.progress;this.moneyDelta=m.applied;}
+    if(r?.outcome==='승리'&&r.winner===0&&this.launch.placeId==='bath'&&!this.chapter)p=bump(p,COUNTERS.bathWins);
+    saveProgress(p);
+  }
+  /** 기술 비용: 캔커피 효과가 살아 있으면 첫 기술 −10. */
+  skillCost(id:SkillId){return skillCostWithBoost(SKILLS[id].cost,this.coffeeBoost);}
+  canUseSkill(sk:{id:SkillId;uses:number}){
+    if(this.phase!=='hand'||sk.uses<=0||!canSpendFocus(this.focus,this.skillCost(sk.id)))return false;
+    if(sk.id==='eye')return this.state.deck.length>0;
+    if(sk.id==='calmFace')return !this.taunt.calmed;
+    return false; // 다른 기술은 다음 단계
+  }
+  /** 기술 사용(규칙 상태는 바꾸지 않는다). 눈썰미: 더미 윗장 1장 공개(판당 2회, 예전 "다음 패 보기"와 같은 동작). 태연한 얼굴: 이번 판 남은 도발 차단(판당 1회). */
+  useSkill(id:SkillId){
+    const sk=this.skills.find(x=>x.id===id), s=this.state;
+    if(!sk||!this.canUseSkill(sk))return;
+    this.focus=spendFocus(this.focus,this.skillCost(id));sk.uses-=1;
+    if(this.coffeeBoost){this.coffeeBoost=false;if(!this.launch.scenario){const p=loadProgress();saveProgress({...p,flags:{...p.flags,[FLAGS.coffeeBoost]:false}});}}
+    if(id==='eye'){this.peek=true;const n=s.deck[0];this.message=`${SKILLS.eye.name}: 다음 더미 패는 ${n.month}월 ${n.name} ${n.title}(${kindLabel(n)})`;}
+    if(id==='calmFace'){this.taunt=calm(this.taunt);this.message=`${SKILLS.calmFace.name}: 이번 판 도발에 흔들리지 않는다.`;}
     this.draw();
+  }
+  /** 가방: 포도당 사탕(대결 중 집중력 +25, 대결당 1회). 가방에서 바로 빼서 저장한다. */
+  useCandy(){
+    if(this.phase!=='hand'||this.candyUsed||this.candies<=0)return;
+    this.candies-=1;this.candyUsed=true;
+    const before=this.focus;this.focus=Math.min(this.focusMax,this.focus+itemById('glucoseCandy').focus);
+    if(!this.launch.scenario){const p=takeFromBag(loadProgress(),'glucoseCandy');if(p)saveProgress(p);}
+    this.message=`포도당 사탕: 집중력 ${before} → ${this.focus}`;this.draw();
   }
   get ui():UI{return {scene:this,layer:this.layer};}
   get myTurn(){return this.phase==='hand'||this.phase==='choice'||this.phase==='gukjin'||this.phase==='gostop';}
@@ -207,15 +249,16 @@ class TableScene extends Phaser.Scene {
     // 5~6. 내 정보(집중력 바, 기술 버튼 포함)와 획득 패(족보 완성 직전 힌트는 내 손패·획득패·공개 바닥패만으로 판단)
     const my=REGIONS.myInfo;
     this.scoreTexts[0]=drawPlayerInfo(ui,my,{character:PLAYER,mood:'normal',score:mine,goCount:s.goCount[0],gukjin:s.gukjinUse(0),flipChances:s.flipChances[0],active:this.myTurn,activeText:this.phase==='choice'?'바닥패 선택':'내 차례',ppeokCount:this.ppeokCount(0),declared:s.declaredMonths(0),big:false,first:true,focus:{cur:this.focus,max:this.focusMax}}).scoreText;
-    // 기술 버튼(눈썰미): 배운 경우에만 있고, 집중력이 모자라거나 횟수를 다 썼거나 더미가 비면 비활성. 공개한 패는 버튼 왼쪽에 내 차례 동안 보인다.
+    // 기술 줄(내 정보 아래): 배운 기술마다 버튼(비용·남은 횟수. 집중력·횟수가 모자라면 비활성), 공개한 더미 패는 그 오른쪽에 내 차례 동안, 가방(사탕) 버튼은 오른쪽 끝.
+    const sbL=skillBarLayout(REGIONS.skillBar,this.skills.length);
+    this.skills.slice(0,sbL.buttons.length).forEach((sk,i)=>{
+      const r=sbL.buttons[i], def=SKILLS[sk.id], cost=this.skillCost(sk.id);
+      button(ui,r.x,r.y,r.w,sk.uses>0?`${def.name} ${cost}${this.coffeeBoost?'*':''} · ${sk.uses}회`:`${def.name} · 다 씀`,()=>this.useSkill(sk.id),this.canUseSkill(sk),r.h,14);
+    });
     const next=s.deck[0];
-    const pb=peekButtonRect(my);
-    if(this.peek&&next)drawCardFace(ui,{x:pb.x-CARD.peek.w-8,y:my.y+my.h/2-CARD.peek.h/2,w:CARD.peek.w,h:CARD.peek.h},next);
-    if(this.hasEye){
-      const sk=SKILLS.eye;
-      const canUse=this.phase==='hand'&&this.eyeUses>0&&canSpendFocus(this.focus,sk.cost)&&s.deck.length>0;
-      button(ui,pb.x,pb.y,pb.w,this.eyeUses>0?`${sk.name} ${sk.cost} · ${this.eyeUses}회`:`${sk.name} · 다 씀`,()=>this.useEye(),canUse,pb.h,14);
-    }
+    if(this.peek&&next)drawCardFace(ui,sbL.preview,next);
+    const bagOn=this.phase==='hand'&&!this.candyUsed&&this.candies>0;
+    button(ui,sbL.bag.x,sbL.bag.y,sbL.bag.w,this.candyUsed?'사탕 사용함':`사탕 ${this.candies}`,()=>this.useCandy(),bagOn,sbL.bag.h,14);
     this.lastCaptured[0]=drawCaptured(ui,REGIONS.myCaptured,mine,{hidden:this.hidden,near:nearBonuses(s.captured[0],s.hands[0],s.table),warnings:bakWarnings(s,0),onTap:stable?()=>this.openCapturedView(0):undefined,place});
     // 7. (안내 줄 없음: 조작 안내는 메뉴 > 규칙 안내. 그 자리는 손패 윗줄 위 여백으로 써 화살표가 패널과 겹치지 않는다)
     // 8. 내 손패: 월순 정렬 + 기회 패(남은 뒤집기 기회만큼), 아랫줄 주 줄 6장 + 윗줄. 먹을 수 있는 패(state.matches)에는 파란 화살표(hand 단계만, 폭탄·흔들기 배지와 함께).
@@ -257,6 +300,7 @@ class TableScene extends Phaser.Scene {
       const mult=[...(pv.baks.length?[`${pv.baks.join('·')} ${pv.multiplier}배`]:[]),...(pv.declared.length?[`선언(${declText(pv.declared)}) ${pv.declMultiplier}배`]:[])];
       const bak=mult.length?`  ×  ${mult.join(' × ')}  =  ${pv.final}점`:'';
       drawModal(ui,{title:'고 또는 스톱?',lines:[
+        ...(this.tauntNow&&!this.taunt.calmed?[{text:'(도발)',size:13,color:COLORS.orange,bold:true}]:[]),
         {text:`기본 점수 ${base}점  ·  현재 ${n}고  ·  지금 스톱하면 ${pv.goPoints}점${bak}`,color:COLORS.text},
         {text:'고를 외치면 기본 점수가 지금보다 올라야 다시 선택할 수 있습니다.',size:15},
       ],buttons:[
@@ -273,7 +317,8 @@ class TableScene extends Phaser.Scene {
           {text:r.goCount===0?'고 없음':r.goCount<=2?`${r.goCount}고  +${r.goCount}점 → ${r.settled}점`:`${r.goCount}고 → ${r.settled}점`,size:19,color:COLORS.text},
           {text:r.baks.length?`박: ${r.baks.map(b=>`${b} ×2`).join(' · ')}`:'박 없음',size:19,color:r.baks.length?COLORS.danger:COLORS.muted},
           {text:r.declared.length?`선언 배수: ${declText(r.declared)} ×${r.declMultiplier}`:'선언 배수 없음',size:19,color:r.declared.length?COLORS.danger:COLORS.muted},
-          {text:`최종 ${r.final}점`,size:34,color:COLORS.gold,bold:true}]
+          {text:`최종 ${r.final}점`,size:34,color:COLORS.gold,bold:true},
+          ...(this.moneyDelta!==0?[{text:`판돈 정산 ${formatWonDelta(this.moneyDelta)}`,size:18,color:this.moneyDelta>0?COLORS.gold:COLORS.danger,bold:true}]:[])]
         :[{text:`“${this.resultLine}”`,size:17,color:COLORS.gold},{text:'나가리. 양쪽 행동이 모두 소진될 때까지 아무도 스톱하지 않았습니다. 승자 없음, 박·정산 없음, 다음 판 이월 없음.',size:17,color:COLORS.text}];
       const shown=lines.slice(0,this.resultShown);
       drawModal(ui,{title:r.outcome==='승리'?(r.winner===0?'승리':'패배'):'나가리',titleColor:r.outcome==='승리'?(r.winner===0?COLORS.gold:COLORS.danger):COLORS.muted,alpha:.82,onTap:()=>this.revealResult(),minBodyH:lines.length*36+70,lines:[
@@ -415,12 +460,12 @@ class TableScene extends Phaser.Scene {
     this.gen++;this.fx.clear();this.hidden.clear();
     this.phase='result';this.selectable=[];this.choiceResolve=undefined;this.gukjinResolve=undefined;this.gostopResolve=undefined;this.peek=false;
     this.message=note;
-    this.saveFocus();
+    this.saveOutcome();
     const r=this.state.result;
     const ev:DialogEvent=r?.outcome==='승리'?(r.winner===0?'playerWin':'aiWin'):'draw';
     this.resultLine=this.dialog.pick(ev,this.state.turn,this.aiRng)??'';
     this.setMood(EVENT_MOOD[ev]);
-    this.startResultReveal(r?.outcome==='승리'?6:2);
+    this.startResultReveal(r?.outcome==='승리'?6+(this.moneyDelta!==0?1:0):2);
     this.draw();
   }
   /** 상대 표정을 바꾸고(데이터) 초상화에 작은 움직임을 건다. 일정 시간 뒤 평상시로 돌아온다. */
@@ -654,7 +699,16 @@ class TableScene extends Phaser.Scene {
     if(s.over)return;
     if(s.canDecide(0)){
       if(!s.canGo(0)){s.declareStop(0);this.voice.play('스톱');this.showResult('마지막 행동이라 고를 할 수 없어 스톱으로 정산했습니다.');return;}
+      // 도발(3장 마 사장): 고/스톱 창 직전에 판당 1회 말풍선. 태연한 얼굴을 썼으면 뜨지 않는다. 응해서 고를 외치면 상대 고/스톱 정책이 공격적으로 바뀐다(provokedPolicy).
+      const tauntLines=this.profile.taunts??[];
+      const taunted=tauntLines.length>0&&shouldTaunt(this.profile,this.taunt);
+      if(taunted){
+        this.taunt=markShown(this.taunt);this.tauntNow=true;
+        this.setMood('happy');this.fx.speech(pickTaunt(tauntLines,this.aiRng),speechZone());
+        await sleep(this,this.fxSettings.ms(FX.taunt));if(gen!==this.gen)return;
+      }
       const d=await this.askGoStop();if(gen!==this.gen)return;
+      this.taunt=afterGoStop(this.taunt,d,taunted);this.tauntNow=false;
       if(d==='stop'){s.declareStop(0);this.voice.play('스톱');this.showResult('스톱을 선택했습니다.');return;}
       const n=s.declareGo(0);this.message=`${n}고! 기본 점수가 ${s.goBase[0]}점보다 올라야 다시 고/스톱을 선택할 수 있습니다.`;this.draw();
       // 실제 고 횟수(상태의 goCount)를 붉은 붓터치로 크게

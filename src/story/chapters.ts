@@ -48,7 +48,7 @@ export const CHAPTERS: readonly Chapter[] = [
     },
   },
   {
-    id: 'ch1', no: 1, title: '머리부터 자르고 와라', place: 'barber', unlocks: ['home'], opponentId: 'barber', rewardSkill: 'eye',
+    id: 'ch1', no: 1, title: '머리부터 자르고 와라', place: 'barber', unlocks: ['home', 'store'], opponentId: 'barber', rewardSkill: 'eye',
     scenes: {
       before: [
         cut('ch1-barber.png', '보관증을 들고 대식에게 간다. 상자를 받으려면 한 판 이겨야 한다.'),
@@ -66,10 +66,40 @@ export const CHAPTERS: readonly Chapter[] = [
       ],
     },
   },
-  { id: 'ch2', no: 2, title: '새벽 두 시의 편의점', place: 'store', unlocks: ['bath'], opponentId: 'bamcha',
-    scenes: { before: placeholder('집으로 가는 길에 불 켜진 편의점. 서린과 재회한다. (2장 대사는 다음 단계)'), after: placeholder('수첩 첫 이름 ‘마철수’를 서린이 알아본다. (다음 단계)') } },
-  { id: 'ch3', no: 3, title: '목욕탕 뒤편의 작은 왕', place: 'bath', unlocks: ['market'], opponentId: 'ma', rewardSkill: 'calmFace',
-    scenes: { before: placeholder('수첩의 첫 이름. 작은 판에서 이기고, 마 사장의 장부를 본다. (다음 단계)'), after: placeholder('장부. 아버지는 남의 빚을 사들였다. (다음 단계)') } },
+  {
+    id: 'ch2', no: 2, title: '새벽 두 시의 편의점', place: 'store', unlocks: ['bath'], opponentId: 'bamcha',
+    scenes: {
+      before: [
+        cut('ch2-store.png', '집으로 가는 길에 불 켜진 편의점.'),
+        line('seorin', '봉투 필요하세…… 한도윤?'),
+        cut('ch2-hair.png', '머리를 보고 웃는다.'),
+        line('seorin', '대식 아저씨한테 잘랐지? 아직도 양쪽 길이가 다르네.'),
+        cut('ch2-phone.png', '며칠 뒤, 전화기 너머.'),
+        line('seorin', '이번 주 안에는 넣을게요. 학교에는 연락하지 마세요.'),
+        cut('ch2-bench.png', '편의점 앞 평상의 택시 기사 ‘밤차’.'),
+        line('seorin', '저 아저씨 심심해 죽어. 한 판 쳐 줘.'),
+      ],
+      after: [
+        cut('ch2-note.png', '수첩의 첫 이름, 마철수.'),
+        line('seorin', '마 사장? 목욕탕 뒤에서 하는 사람.'),
+      ],
+    },
+  },
+  {
+    id: 'ch3', no: 3, title: '목욕탕 뒤편의 작은 왕', place: 'bath', unlocks: ['market'], opponentId: 'ma', rewardSkill: 'calmFace',
+    scenes: {
+      before: [
+        cut('ch3-bath.png', '수첩의 첫 이름. 작은 판에서 이기고, 마 사장의 장부를 본다.'),
+        cut('ch3-ma.png', '돈 없는 손님에게 웃으며 자리를 내준다.'),
+      ],
+      after: [
+        cut('ch3-ledger.png', '장부. 아버지는 돈을 빌린 게 아니라 남의 빚을 사들였다.'),
+        line('ma', '이상한 사람이었지. 남의 빚을 자기 돈 주고 가져가.'),
+        cut('ch3-name.png', '장부에 서린 어머니 이름.'),
+        line('ma', '그건 네가 알 일이 아니야.'),
+      ],
+    },
+  },
   { id: 'ch4', no: 4, title: '시장에서는 웃는 사람이 무섭다', place: 'market', unlocks: ['harbor'], opponentId: 'bokhee', rewardSkill: 'lookAway', focusMaxAfter: 120,
     scenes: { before: placeholder('장부의 다음 흔적. 복희에게 사진 속 인물을 듣는다. (다음 단계)'), after: placeholder('“네 아버지는 왕을 이기려던 사람이 아니야.” (다음 단계)') } },
   { id: 'ch5', no: 5, title: '친구라고 부르는 남자', place: 'harbor', unlocks: [], opponentId: 'bonggu', rewardSkill: 'swap',
@@ -91,6 +121,9 @@ export const CHAPTERS: readonly Chapter[] = [
 ];
 
 export const CHAPTER_IDS = CHAPTERS.map(c => c.id);
+/** 이야기·대결이 실제로 구현된 장. 그 뒤 장의 무대는 지도에서 잠긴 채 보인다(보정: 다음 목적지 ▶는 집에). */
+export const IMPLEMENTED_CHAPTERS: readonly ChapterId[] = ['prologue', 'ch1', 'ch2', 'ch3'];
+export const isChapterImplemented = (id: ChapterId) => IMPLEMENTED_CHAPTERS.includes(id);
 export const isChapterId = (v: unknown): v is ChapterId => typeof v === 'string' && CHAPTERS.some(c => c.id === v);
 export function chapterById(id: ChapterId): Chapter { return CHAPTERS.find(c => c.id === id)!; }
 /** 다음 장 id. 마지막(에필로그)이면 그대로. */

@@ -35,8 +35,10 @@ export const HAND_TOP_PAD = 24;
 /** 획득 패 패널 높이(한 줄 4묶음). */
 export const CAPTURED_H = 84;
 const TOP_H = 40, OPP_INFO_H = 84, MY_INFO_H = 64;
-/** 1280 기준 화투판 높이(528). 긴 화면에서는 늘어난 높이의 70%가 더해진다. */
-export const TABLE_H_BASE = BASE_HEIGHT - TOP_H - OPP_INFO_H - CAPTURED_H - MY_INFO_H - CAPTURED_H - (HAND_TOP_PAD + CARD.hand.h * 2 + GAP + BOTTOM_SAFE);
+/** 기술 줄(내 정보 아래): 배운 기술 버튼(폭 140, 최대 4개)과 가방 버튼. 공개한 더미 패(높이 40)도 여기에 보인다. */
+export const SKILL_BAR_H = 40;
+/** 1280 기준 화투판 높이(488). 긴 화면에서는 늘어난 높이의 70%가 더해진다. */
+export const TABLE_H_BASE = BASE_HEIGHT - TOP_H - OPP_INFO_H - CAPTURED_H - MY_INFO_H - SKILL_BAR_H - CAPTURED_H - (HAND_TOP_PAD + CARD.hand.h * 2 + GAP + BOTTOM_SAFE);
 /** 늘어난 높이의 배분 비율: 화투판 70%, 손패 위 여백 30%. */
 export const EXTRA_SPLIT = { table: 0.7, handPad: 0.3 } as const;
 
@@ -49,13 +51,15 @@ export const LAYOUT = { handTopPad: HAND_TOP_PAD, bottomSafe: BOTTOM_SAFE, inset
  * 위에서 아래 순서의 영역. 손패(위 여백 + 두 줄 + 안전 여백)·정보·획득 패널 크기는 높이와 무관하게 같고, 남은 높이는 화투판과 손패 위 여백이 나눠 갖는다.
  * export 이름과 필드명은 고정이며 configureLayout()이 값만 갱신한다. 상시 안내 줄은 없다(메뉴 > 규칙 안내).
  */
-export const REGIONS: { topBar: Rect; oppInfo: Rect; oppCaptured: Rect; table: Rect; myInfo: Rect; myCaptured: Rect; hand: Rect } = {
+export const REGIONS: { topBar: Rect; oppInfo: Rect; oppCaptured: Rect; table: Rect; myInfo: Rect; skillBar: Rect; myCaptured: Rect; hand: Rect } = {
   topBar: { x: 0, y: 0, w: 720, h: TOP_H },
   /** 상대 초상화(반지름 36)·이름·칩·점수 배지·말풍선 자리·손패 뒷면. 화면 높이의 15% 이내. */
   oppInfo: { x: 0, y: 0, w: 720, h: OPP_INFO_H },
   oppCaptured: { x: 0, y: 0, w: 720, h: CAPTURED_H },
   table: { x: MARGIN, y: 0, w: 720 - MARGIN * 2, h: TABLE_H_BASE },
   myInfo: { x: 0, y: 0, w: 720, h: MY_INFO_H },
+  /** 기술 버튼 줄(눈썰미·태연한 얼굴…) + 가방 버튼. */
+  skillBar: { x: 0, y: 0, w: 720, h: SKILL_BAR_H },
   myCaptured: { x: 0, y: 0, w: 720, h: CAPTURED_H },
   /** 손패: 위 여백(화살표 자리) + 두 줄(윗줄·아랫줄) + 아래 안전 여백. */
   hand: { x: 0, y: 0, w: 720, h: 0 },
@@ -85,6 +89,7 @@ export function configureLayout(height: number, insets: SafeInsets = { top: 0, b
   put(REGIONS.oppCaptured, CAPTURED_H);
   put(REGIONS.table, tableH);
   put(REGIONS.myInfo, MY_INFO_H);
+  put(REGIONS.skillBar, SKILL_BAR_H);
   put(REGIONS.myCaptured, CAPTURED_H);
   put(REGIONS.hand, handH);
   return REGIONS;
@@ -118,16 +123,23 @@ export function scoreBadgeRect(reg: Rect, big: boolean): Rect {
   const { w, h } = INFO.scoreBadge;
   return { x: reg.w - MARGIN - 12 - w, y: big ? reg.y + 4 : reg.y + Math.round((reg.h - h) / 2), w, h };
 }
-/** 내 패널의 "다음 패 보기" 버튼: 점수 배지 왼쪽, 폭 140. */
-export function peekButtonRect(reg: Rect): Rect {
-  const sb = scoreBadgeRect(reg, false);
-  return { x: sb.x - 8 - INFO.peekW, y: reg.y + Math.round(reg.h / 2) - 16, w: INFO.peekW, h: 32 };
-}
-/** 차례 상자("내 차례"/"상대 차례"/"바닥패 선택"). 상대는 오른쪽 구역 왼쪽 아래, 나는 다음 패 보기 버튼 왼쪽. */
+/** 차례 상자("내 차례"/"상대 차례"/"바닥패 선택"). 상대는 오른쪽 구역 왼쪽 아래, 나는 점수 배지 왼쪽(기술 버튼은 아래 기술 줄로 옮겼다). */
 export function activeBoxRect(reg: Rect, big: boolean): Rect {
   const { w, h } = INFO.activeBox;
   if (big) return { x: INFO.split, y: reg.y + reg.h - 36, w, h };
-  return { x: peekButtonRect(reg).x - 10 - w, y: reg.y + Math.round(reg.h / 2) - 13, w, h };
+  return { x: scoreBadgeRect(reg, false).x - 10 - w, y: reg.y + Math.round(reg.h / 2) - 13, w, h };
+}
+/** 기술 줄: 기술 버튼(폭 INFO.peekW=140, 높이 32, 간격 8)을 왼쪽부터, 가방 버튼(폭 100)은 오른쪽 끝, 공개한 더미 패는 마지막 기술 버튼 오른쪽. */
+export const SKILL_BAR = { btnW: INFO.peekW, btnH: 32, gap: 6, bagW: 90, maxSkills: 4 } as const; // 4×140 + 3×6 = 578 → 20..598, 가방 610..700
+export type SkillBarLayout = { buttons: Rect[]; bag: Rect; preview: Rect };
+export function skillBarLayout(reg: Rect, nSkills: number): SkillBarLayout {
+  const { btnW, btnH, gap, bagW } = SKILL_BAR;
+  const y = reg.y + Math.round((reg.h - btnH) / 2);
+  const n = Math.min(nSkills, SKILL_BAR.maxSkills);
+  const buttons = Array.from({ length: n }, (_, i) => ({ x: MARGIN + i * (btnW + gap), y, w: btnW, h: btnH }));
+  const bag = { x: reg.w - MARGIN - bagW, y, w: bagW, h: btnH };
+  const px = MARGIN + n * (btnW + gap);
+  return { buttons, bag, preview: { x: px, y: reg.y + Math.round((reg.h - CARD.peek.h) / 2), w: CARD.peek.w, h: CARD.peek.h } };
 }
 /** 말풍선: 점수 배지와의 간격, 한 줄 높이, 두 줄까지 허용한 최대 높이(패널 안에 머무름). */
 export const SPEECH = { gapToBadge: 12, h: 34, maxH: 52 } as const;
@@ -402,6 +414,8 @@ export function journeyNodes(n: number): { x: number; y: number }[] {
 export const STORY = {
   header: { y: 22, size: 15 },
   cut: { w: 640, h: 460, y: 120, textGap: 22, textSize: 20 },
+  /** 그림 없는 컷: 상자 자리 가운데 큰 글자(22px, 줄 간격 1.5). */
+  cutText: { size: 22, lineHeight: 1.5, pad: 24 },
   line: { portraitR: 40, bubbleMinH: 120, textSize: 20, pad: 18, /** 말풍선 위 y = 화면 높이 × 이 비율 */ yRatio: 0.38 },
   hint: { size: 13, bottom: 36 },
   /** 길게 누르기 판정(ms)과 빨리 넘김 간격(ms). */

@@ -1,70 +1,98 @@
-// 여정 지도 씬. 상단 day·소지금·압류 예고, 가운데 장소 노드(그림 없이 원과 이름, 세로 지그재그), 아래 메뉴.
-// 노드를 누르면 그 장소의 행동 메뉴(모달). 진행 상태는 src/story/progress.ts가 읽고 쓴다.
+// 여정 지도 씬. 상단 day·소지금·압류 예고·가방, 가운데 장소 노드(그림 없이 원과 이름, 세로 지그재그), 아래 메뉴.
+// 노드를 누르면 그 장소의 행동 메뉴(모달). 진행 상태는 src/story/progress.ts가 읽고 쓰고, 서린 사건은 src/story/serin.ts가 정한다.
 import Phaser from 'phaser';
+import { seededRng } from '../rng';
 import { SCENARIOS } from '../scenarios';
 import { CHAPTERS, type Chapter, chapterById, chapterLabel, placeOpensLabel } from '../story/chapters';
-import { PLACES, PLACE_IDS, type PlaceId } from '../story/places';
-import { type Progress, SEIZURE_NOTICE, currentChapter, formatManWon, formatWon, isChapterDone, loadProgress, resetProgress, rest, saveProgress } from '../story/progress';
+import { FLAGS, type ItemId, itemById, shopItems } from '../story/items';
+import { PLACES, PLACE_IDS, type PlaceId, canSit, isPlaceReady } from '../story/places';
+import { COUNTERS, MA_ENTRY_WINS, type Progress, SEIZURE_NOTICE, bagCount, buyItem, canChallengeMa, counter, currentChapter, formatManWon, formatWon, formatWonDelta, isChapterDone, loadProgress, resetProgress, rest, saveProgress, setFlag, useItemOnMap } from '../story/progress';
+import { type SerinEventId, applyEvent, serinEventById, tierName, visitSerin } from '../story/serin';
 import { SKILLS } from '../story/skills';
-import { FxSettings } from '../ui/fx';
+import { CardFx, FxSettings } from '../ui/fx';
 import { BUILD_TAG, CREDITS, NOT_IMPLEMENTED, RULES } from '../ui/infoTexts';
 import { DESIGN, JOURNEY, MARGIN, journeyNodes } from '../ui/layout';
+import { missingAssets } from '../ui/missing';
 import { type ModalButton, type ModalLine, drawModal } from '../ui/modals';
 import { SoundFx } from '../ui/sound';
 import { COLORS, FONT, type UI, box, button, label, panel } from '../ui/widgets';
-import { type JourneyLaunch, SCENE_KEYS, goJourney, playStory, startChapterMatch, startPractice, startTable } from './flow';
+import { type JourneyLaunch, SCENE_KEYS, goJourney, playStory, startChapterMatch, startNormalMatch, startPractice, startTable } from './flow';
 
-type Modal = 'none' | 'place' | 'menu' | 'rules' | 'credits' | 'devinfo' | 'scenarios' | 'reward' | 'box';
+type Modal = 'none' | 'place' | 'menu' | 'rules' | 'credits' | 'devinfo' | 'scenarios' | 'reward' | 'box' | 'shop' | 'bag' | 'notice' | 'choice' | 'noMoney';
 /** 노드 색: 열린 곳은 어두운 녹색 + 황동, 잠긴 곳은 회색. */
 const NODE = { open: 0x15302a, openEdge: 0xb08d4a, locked: 0x1c1c1a, lockedEdge: 0x444039, lockedText: '#6f6a60', link: 0x7a6236 } as const;
+const PREPARING = '다음 이야기는 아직 준비 중';
 
 export class JourneyScene extends Phaser.Scene {
   progress!: Progress;
   layer!: Phaser.GameObjects.Container;
-  sfx = new SoundFx(); fxSettings = new FxSettings();
+  sfx = new SoundFx(); fxSettings = new FxSettings(); fx!: CardFx;
   modal: Modal = 'none'; selected?: PlaceId; launch: JourneyLaunch = {};
+  /** 안내 창 내용(사건 결과·아이템 사용 등). */
+  notice: { title: string; lines: string[] } = { title: '', lines: [] };
+  /** 선택이 있는 서린 사건(교재비). */
+  choiceEvent?: SerinEventId;
+  /** 돈이 모자라 못 앉는 장소. */
+  noMoneyPlace?: PlaceId;
   /** 밤 → 아침 전환 중 입력 잠금. */
   busy = false;
   constructor() { super(SCENE_KEYS.journey); }
-  init(data: JourneyLaunch = {}) { this.launch = data; this.modal = data.reward || data.chapterDone ? 'reward' : 'none'; this.selected = undefined; this.busy = false; }
+  init(data: JourneyLaunch = {}) {
+    this.launch = data; this.selected = data.openPlace; this.busy = false; this.choiceEvent = data.serinChoice;
+    this.modal = data.reward || data.chapterDone ? 'reward' : data.serinChoice ? 'choice' : data.notice ? 'notice' : data.openPlace ? 'place' : 'none';
+    if (data.notice) this.notice = data.notice;
+  }
   create() {
     this.progress = loadProgress();
+    this.fx = new CardFx(this, this.add.container(), this.fxSettings);
     this.input.on('pointerdown', () => this.sfx.unlock());
+    this.events.once('shutdown', () => this.fx.clear());
     this.draw();
+    if (this.launch.moneyDelta) this.pulseMoney(this.launch.moneyDelta);
+    // 편의점 첫 방문: 2장 before 장면(바이블 2장 대사)을 먼저 재생한 뒤 돌아와 행동 메뉴를 연다
+    if (this.modal === 'place' && this.selected === 'store') this.maybeFirstStoreVisit();
   }
   get ui(): UI { return { scene: this, layer: this.layer }; }
   get chapter(): Chapter { return currentChapter(this.progress); }
-  isOpen(id: PlaceId) { return this.progress.unlockedPlaces.includes(id); }
+  /** 열린 장소 = 진행에서 해금됐고 그 장의 이야기가 구현된 곳. */
+  isOpen(id: PlaceId) { return this.progress.unlockedPlaces.includes(id) && isPlaceReady(id); }
+  /** 다음 목적지: 현재 장의 무대. 아직 잠겨 있으면(구현 전) 집. */
+  get nextPlace(): PlaceId { const ch = this.chapter; return this.isOpen(ch.place) && !isChapterDone(this.progress, ch.id) ? ch.place : 'home'; }
+  get nextIsPreparing() { return this.nextPlace === 'home' && this.chapter.place !== 'home'; }
   save() { saveProgress(this.progress); }
+  /** 소지금 변화 "+N원/−N원"을 머리 패널의 소지금 글자 옆에 띄운다. */
+  pulseMoney(delta: number) { if (!delta) return; const H = JOURNEY.header; this.fx.scorePulse(undefined, DESIGN.width - MARGIN - 24, H.y + 46, delta, 1, formatWonDelta(delta)); }
   draw() {
     this.layer?.destroy(true); this.layer = this.add.container();
+    this.children.bringToTop(this.fx.layer);
     const ui = this.ui, p = this.progress, ch = this.chapter;
     box(ui, 0, 0, DESIGN.width, DESIGN.height, COLORS.bg);
-    // 1. 머리: day · 소지금 · 현재 장 · 압류 예고(작게, 붉은 글자) · 집중력
+    // 1. 머리: day · 소지금 · 현재 장 · 압류 예고(작게, 붉은 글자) · 집중력·기술 · 가방 버튼
     const H = JOURNEY.header;
     panel(ui, MARGIN, H.y, DESIGN.width - MARGIN * 2, H.h, 'wood');
-    label(ui, MARGIN + 24, H.y + 18, `DAY ${p.day}`, 24, COLORS.gold, 200, [0, 0], true);
-    label(ui, DESIGN.width - MARGIN - 24, H.y + 18, formatWon(p.money), 24, COLORS.text, 300, [1, 0], true);
-    label(ui, MARGIN + 24, H.y + 54, chapterLabel(ch), 14, COLORS.muted, 420, [0, 0]);
-    label(ui, DESIGN.width - MARGIN - 24, H.y + 54, `압류 예고 ${formatManWon(SEIZURE_NOTICE)}`, 13, COLORS.bakWarn, 240, [1, 0], true);
-    label(ui, MARGIN + 24, H.y + 76, `집중력 ${p.focus}/${p.focusMax}  ·  기술 ${p.skills.length ? p.skills.map(s => SKILLS[s].name).join(', ') : '없음'}`, 13, COLORS.goldDim, 500, [0, 0]);
-    // 2. 장소 노드: 세로 지그재그. 이음선 → 원 → 이름 → 잠김 안내. 다음에 가야 할 곳(현재 장의 무대)은 금색 테두리 + ▶
+    label(ui, MARGIN + 24, H.y + 14, `DAY ${p.day}`, 24, COLORS.gold, 200, [0, 0], true);
+    label(ui, DESIGN.width - MARGIN - 24, H.y + 14, formatWon(p.money), 24, COLORS.text, 300, [1, 0], true).setName('money');
+    label(ui, MARGIN + 24, H.y + 48, chapterLabel(ch), 14, COLORS.muted, 400, [0, 0]);
+    label(ui, DESIGN.width - MARGIN - 24, H.y + 44, `압류 예고 ${formatManWon(SEIZURE_NOTICE)}`, 13, COLORS.bakWarn, 240, [1, 0], true);
+    label(ui, MARGIN + 24, H.y + 72, `집중력 ${p.focus}/${p.focusMax}  ·  기술 ${p.skills.length ? p.skills.map(s => SKILLS[s].name).join(', ') : '없음'}`, 13, COLORS.goldDim, 420, [0, 0]);
+    const bagN = Object.values(p.bag).reduce((s, n) => s + (n ?? 0), 0);
+    button(ui, DESIGN.width - MARGIN - 24 - 110, H.y + 64, 110, `가방 ${bagN}`, () => this.switchModal('none', 'bag'), this.modal === 'none' && !this.busy, 28, 14);
+    // 2. 장소 노드: 세로 지그재그. 이음선 → 원 → 이름 → 잠김 안내. 다음 목적지에 금색 테두리 + ▶
     const pos = journeyNodes(PLACE_IDS.length);
     for (let i = 1; i < pos.length; i++) {
       const a = pos[i - 1], b = pos[i];
-      const ln = this.add.line(0, 0, a.x, a.y, b.x, b.y, NODE.link, 0.45).setOrigin(0).setLineWidth(2);
-      this.layer.add(ln);
+      this.layer.add(this.add.line(0, 0, a.x, a.y, b.x, b.y, NODE.link, 0.45).setOrigin(0).setLineWidth(2));
     }
-    const r = JOURNEY.node.r;
+    const r = JOURNEY.node.r, next = this.nextPlace;
     PLACE_IDS.forEach((id, i) => {
       const place = PLACES[id], { x, y } = pos[i];
-      const open = this.isOpen(id), next = ch.place === id && !isChapterDone(p, ch.id);
-      const shadow = this.add.circle(x, y + 3, r + 2, 0x000000, 0.45); this.layer.add(shadow);
-      const circle = this.add.circle(x, y, r, open ? NODE.open : NODE.locked).setStrokeStyle(next ? JOURNEY.node.ring : 2, next ? 0xe0b64f : open ? NODE.openEdge : NODE.lockedEdge);
+      const open = this.isOpen(id), isNext = id === next;
+      this.layer.add(this.add.circle(x, y + 3, r + 2, 0x000000, 0.45));
+      const circle = this.add.circle(x, y, r, open ? NODE.open : NODE.locked).setStrokeStyle(isNext ? JOURNEY.node.ring : 2, isNext ? 0xe0b64f : open ? NODE.openEdge : NODE.lockedEdge);
       this.layer.add(circle);
-      label(ui, x, y, place.name, place.name.length > 4 ? 15 : 17, open ? COLORS.text : NODE.lockedText, r * 2 - 6, [0.5, 0.5], true);
+      label(ui, x, y, place.name, place.name.length > 4 ? 15 : 17, open ? COLORS.text : NODE.lockedText, r * 2 - 6, [0.5, 0.5], true).setName(`place:${id}`);
       if (!open) label(ui, x, y + r + JOURNEY.node.labelGap, placeOpensLabel(place.opensAt) ?? '', 12, NODE.lockedText, 160, [0.5, 0]);
-      if (next) label(ui, x - r - 14, y, '▶', 22, COLORS.gold, 40, [1, 0.5], true);
+      if (isNext) label(ui, x - r - 14, y, '▶', 22, COLORS.gold, 40, [1, 0.5], true);
       circle.setInteractive({ useHandCursor: true }).on('pointerdown', () => this.openPlace(id));
     });
     // 3. 아래 메뉴
@@ -72,23 +100,39 @@ export class JourneyScene extends Phaser.Scene {
     button(ui, MARGIN, DESIGN.height - B.pad - B.h, DESIGN.width - MARGIN * 2, '메뉴', () => this.switchModal('none', 'menu'), this.modal === 'none' && !this.busy, B.h, 20);
     this.drawModals();
   }
-  openPlace(id: PlaceId) { if (this.modal !== 'none' || this.busy) return; this.selected = id; this.modal = 'place'; this.draw(); }
+  openPlace(id: PlaceId) {
+    if (this.modal !== 'none' || this.busy) return;
+    this.selected = id; this.modal = 'place';
+    if (id === 'store' && this.isOpen('store') && this.maybeFirstStoreVisit()) return;
+    this.draw();
+  }
+  /** 편의점 첫 방문이면 2장 before 장면을 재생하고(캔커피 해금 플래그), 끝나면 편의점 메뉴로 돌아온다. 재생을 시작했으면 true. */
+  maybeFirstStoreVisit(): boolean {
+    if (this.progress.flags['ch2.visited']) return false;
+    const c2 = chapterById('ch2');
+    this.progress = setFlag(setFlag(this.progress, 'ch2.visited'), FLAGS.ch2Talked); this.save();
+    playStory(this, chapterLabel(c2), c2.scenes.before, s => goJourney(s, { openPlace: 'store' }));
+    return true;
+  }
   switchModal(from: Modal, to: Modal) { if (this.modal !== from) return; this.modal = to; this.draw(); }
+  showNotice(title: string, lines: string[], from: Modal = this.modal) { if (this.modal !== from) return; this.notice = { title, lines }; this.modal = 'notice'; this.draw(); }
   drawModals() {
     const ui = this.ui, p = this.progress;
+    const close = (from: Modal, to: Modal = 'none'): ModalButton => ({ text: '닫기', onTap: () => this.switchModal(from, to) });
     if (this.modal === 'place' && this.selected) {
       const id = this.selected, place = PLACES[id];
-      const close: ModalButton = { text: '닫기', onTap: () => this.switchModal('place', 'none') };
       if (!this.isOpen(id)) {
         const at = place.opensAt === 'start' ? undefined : chapterById(place.opensAt);
         drawModal(ui, { title: `${place.name} · 잠김`, alpha: 0.85, lines: [
           { text: at ? `${placeOpensLabel(place.opensAt)}. ${at.no}장 ‘${at.title}’은 다음 단계에서 열립니다.` : '아직 열리지 않았습니다.', size: 16, color: COLORS.text },
           { text: place.actions, size: 13 },
-        ], buttons: [close] });
+        ], buttons: [close('place')] });
         return;
       }
-      const lines: ModalLine[] = [{ text: place.actions, size: 14 }];
+      const lines: ModalLine[] = [];
       const buttons: ModalButton[] = [];
+      if (id === 'home' && this.nextIsPreparing) lines.push({ text: PREPARING, size: 16, color: COLORS.gold, bold: true });
+      lines.push({ text: place.actions, size: 14 });
       if (id === 'barber') {
         const ch1 = chapterById('ch1'), done = isChapterDone(p, 'ch1'), current = p.chapterId === 'ch1';
         buttons.push({ text: '대화(이야기 재생)', onTap: () => {
@@ -101,15 +145,52 @@ export class JourneyScene extends Phaser.Scene {
         buttons.push({ text: '휴식 (집중력 회복 · 다음 날)', onTap: () => this.restAtHome() });
         buttons.push({ text: '연습 대결', onTap: () => startPractice(this, 'barber') });
         buttons.push({ text: '아버지 물건 조사', onTap: () => this.switchModal('place', 'box') });
+      } else if (id === 'store') {
+        const ch2 = chapterById('ch2'), current = p.chapterId === 'ch2';
+        lines.push({ text: `서린 호감 ${p.serin.affinity}  ·  방문 ${p.serin.visits}회`, size: 13, color: COLORS.goldDim });
+        buttons.push({ text: '서린과 대화', onTap: () => this.talkSerin() });
+        buttons.push({ text: '상점', onTap: () => this.switchModal('place', 'shop') });
+        buttons.push({ text: current ? '밤차와 한 판 (2장 · 판돈 0)' : '밤차와 한 판 (연습 · 판돈 0)', onTap: () => { if (current) startChapterMatch(this, ch2, true); else startPractice(this, 'bamcha'); } });
+      } else if (id === 'bath') {
+        const wins = counter(p, COUNTERS.bathWins), ch3 = chapterById('ch3'), done = isChapterDone(p, 'ch3');
+        lines.push({ text: `일반 대결 ${wins}승 (마 사장 입장: ${MA_ENTRY_WINS}승)  ·  판돈 1점 ${formatWon(place.stakePerPoint)}`, size: 13, color: COLORS.goldDim });
+        buttons.push({ text: `판 치기 (일반 · 1점 ${formatWon(place.stakePerPoint)})`, onTap: () => this.sitNormal(id) });
+        buttons.push({ text: done ? '마 사장과 대결(3장) · 완료' : '마 사장과 대결(3장)', onTap: () => startChapterMatch(this, ch3), enabled: canChallengeMa(p) });
+      } else {
+        if (place.stakePerPoint > 0) buttons.push({ text: `판 치기 (일반 · 1점 ${formatWon(place.stakePerPoint)})`, onTap: () => this.sitNormal(id) });
       }
-      buttons.push(close);
+      buttons.push(close('place'));
       drawModal(ui, { title: place.name, alpha: 0.85, lines, buttons });
     }
+    if (this.modal === 'noMoney' && this.noMoneyPlace) {
+      const place = PLACES[this.noMoneyPlace];
+      drawModal(ui, { title: '판에 앉을 돈이 없다', alpha: 0.85, lines: [
+        { text: `${place.name}은 1점 ${formatWon(place.stakePerPoint)} 판이라 최소 ${formatWon(place.stakePerPoint * 7)}이 있어야 앉을 수 있다. 지금 ${formatWon(p.money)}.`, size: 16, color: COLORS.text },
+        { text: '집에서 쉬고 편의점의 서린을 찾아가면 길이 열린다(야간 근무 식사).', size: 14 },
+      ], buttons: [close('noMoney')] });
+    }
     if (this.modal === 'box') {
-      // 1장 상자 내용(after 첫 컷의 글자 그대로). 1장을 아직 끝내지 않았으면 조사할 것이 없다.
       const ch1 = chapterById('ch1'), first = ch1.scenes.after[0];
       const text = isChapterDone(p, 'ch1') && first.kind === 'cut' ? first.text : '아직 조사할 물건이 없다.';
-      drawModal(ui, { title: '아버지 물건', alpha: 0.85, lines: [{ text, size: 17, color: COLORS.text }], buttons: [{ text: '닫기', onTap: () => this.switchModal('box', 'none') }] });
+      drawModal(ui, { title: '아버지 물건', alpha: 0.85, lines: [{ text, size: 17, color: COLORS.text }], buttons: [close('box')] });
+    }
+    if (this.modal === 'shop') {
+      const items = shopItems(p.flags);
+      const buttons: ModalButton[] = items.map(it => ({ text: `${it.name} · ${formatWon(it.price ?? 0)} · 보유 ${bagCount(p, it.id)}`, enabled: p.money >= (it.price ?? 0), onTap: () => this.buy(it.id) }));
+      drawModal(ui, { title: '편의점 상점', alpha: 0.85, lines: [{ text: `소지금 ${formatWon(p.money)}`, size: 16, color: COLORS.gold, bold: true }, { text: items.map(it => `${it.name}: ${it.effect}`).join('\n'), size: 13 }], buttons: [...buttons, close('shop', 'place')] });
+    }
+    if (this.modal === 'bag') {
+      const owned = (Object.keys(p.bag) as ItemId[]).filter(id => bagCount(p, id) > 0);
+      const buttons: ModalButton[] = owned.map(id => { const it = itemById(id); return { text: `${it.name} ×${bagCount(p, id)}${it.use === 'match' ? ' (대결 중 사용)' : it.use === 'map' ? ' · 사용' : ''}`, enabled: it.use === 'map', onTap: () => this.useItem(id) }; });
+      drawModal(ui, { title: '가방', alpha: 0.85, lines: [{ text: owned.length ? `집중력 ${p.focus}/${p.focusMax}` : '가방이 비었다.', size: 15, color: COLORS.text }], buttons: [...buttons, close('bag')] });
+    }
+    if (this.modal === 'notice') drawModal(ui, { title: this.notice.title, alpha: 0.85, lines: this.notice.lines.map(text => ({ text, size: 16, color: COLORS.text })), buttons: [close('notice')] });
+    if (this.modal === 'choice' && this.choiceEvent) {
+      const ev = serinEventById(this.choiceEvent), ch = ev.choice!;
+      drawModal(ui, { title: ev.title, alpha: 0.85, lines: [{ text: `“${ev.quote}”`, size: 17, color: COLORS.gold }, { text: `소지금 ${formatWon(p.money)}`, size: 14 }], buttons: [
+        { text: `${ch.accept} (${formatWonDelta(-ch.cost)})`, enabled: p.money >= ch.cost, onTap: () => this.resolveChoice('accept') },
+        { text: ch.decline, onTap: () => this.resolveChoice('decline') },
+      ] });
     }
     if (this.modal === 'reward') {
       const ch = this.launch.chapterDone ? chapterById(this.launch.chapterDone) : undefined;
@@ -128,28 +209,78 @@ export class JourneyScene extends Phaser.Scene {
         { text: '규칙 안내', onTap: () => this.switchModal('menu', 'rules') },
         { text: '제작자·출처', onTap: () => this.switchModal('menu', 'credits') },
         { text: '개발 정보', onTap: () => this.switchModal('menu', 'devinfo') },
-        { text: '닫기', onTap: () => this.switchModal('menu', 'none') },
+        close('menu'),
       ] });
     }
-    if (this.modal === 'rules') drawModal(ui, { title: '규칙 안내', alpha: 0.92, lines: RULES, buttons: [{ text: '닫기', onTap: () => this.switchModal('rules', 'menu') }] });
-    if (this.modal === 'credits') drawModal(ui, { title: '제작자·출처', alpha: 0.92, lines: CREDITS, buttons: [{ text: '닫기', onTap: () => this.switchModal('credits', 'menu') }] });
+    if (this.modal === 'rules') drawModal(ui, { title: '규칙 안내', alpha: 0.92, lines: RULES, buttons: [close('rules', 'menu')] });
+    if (this.modal === 'credits') drawModal(ui, { title: '제작자·출처', alpha: 0.92, lines: CREDITS, buttons: [close('credits', 'menu')] });
     if (this.modal === 'devinfo') {
+      const missing = missingAssets();
       drawModal(ui, { title: '개발 정보', alpha: 0.92, lines: [
-        { text: `빌드 ${BUILD_TAG}  ·  진행 ${p.chapterId} (day ${p.day})  ·  열린 곳 ${p.unlockedPlaces.length}/${PLACE_IDS.length}  ·  장 ${CHAPTERS.length}개`, size: 14, color: COLORS.text },
-        { text: `미구현: ${NOT_IMPLEMENTED}. 2장 이후 이야기·기술 7종·아이템·의심도는 데이터만 있음. 컷 그림·인물 그림(장대식·한도윤 외) 없음.`, size: 13 },
+        { text: `빌드 ${BUILD_TAG}  ·  진행 ${p.chapterId} (day ${p.day})  ·  열린 곳 ${p.unlockedPlaces.length}/${PLACE_IDS.length}  ·  장 ${CHAPTERS.length}개  ·  서린 호감 ${p.serin.affinity} pity ${p.serin.pity}`, size: 14, color: COLORS.text },
+        { text: `미구현: ${NOT_IMPLEMENTED}. 4장 이후 이야기·기술(눈썰미·태연한 얼굴 외)·장비·의심도는 데이터만.`, size: 13 },
+        { text: missing.length ? `읽지 못한 그림(글자 컷·자리 표시로 대신): ${missing.join(', ')}` : '읽지 못한 그림 없음(아직 읽기를 시도하지 않은 파일은 표시되지 않음).', size: 12 },
         { text: '진행 초기화는 저장(hwatu.progress.v1)을 지우고 프롤로그부터 다시 시작합니다.', size: 13 },
       ], buttons: [
         { text: '진행 초기화', onTap: () => { if (this.modal !== 'devinfo') return; resetProgress(); this.scene.start(SCENE_KEYS.boot); } },
         { text: '시나리오', onTap: () => this.switchModal('devinfo', 'scenarios') },
-        { text: '닫기', onTap: () => this.switchModal('devinfo', 'menu') },
+        close('devinfo', 'menu'),
       ] });
     }
     if (this.modal === 'scenarios') {
       drawModal(ui, { title: '개발용 시나리오', alpha: 0.92, lines: [{ text: '고정된 패 구성으로 특수 상황을 재현합니다. 선택하면 그 구성으로 대결을 시작합니다.', size: 14 }], buttons: [
         ...SCENARIOS.map(sc => ({ text: sc.title, onTap: () => startTable(this, { scenario: sc.key, opponentId: 'barber' }) })),
-        { text: '닫기', onTap: () => this.switchModal('scenarios', 'devinfo') },
+        close('scenarios', 'devinfo'),
       ] });
     }
+  }
+  // ---- 행동 ----
+  /** 일반 대결: 소지금이 판돈 × 7 미만이면 안내만. */
+  sitNormal(id: PlaceId) {
+    if (this.modal !== 'place') return;
+    if (!canSit(this.progress.money, PLACES[id].stakePerPoint)) { this.noMoneyPlace = id; this.modal = 'noMoney'; this.draw(); return; }
+    startNormalMatch(this, id);
+  }
+  buy(id: ItemId) {
+    if (this.modal !== 'shop') return;
+    const it = itemById(id), next = buyItem(this.progress, id);
+    if (!next) return;
+    this.progress = next; this.save(); this.draw(); this.pulseMoney(-(it.price ?? 0));
+  }
+  useItem(id: ItemId) {
+    if (this.modal !== 'bag') return;
+    const r = useItemOnMap(this.progress, id);
+    if (!r) return;
+    this.progress = r.progress; this.save();
+    this.showNotice('가방', [r.note], 'bag');
+  }
+  /**
+   * 서린과 대화: 하루 첫 방문 호감 +1, 하루 1회 사건 추첨(seededRng(day×1000+visits)). 사건 장면은 이야기 씬으로 재생하고,
+   * 끝나면 효과를 적용해 안내 창으로 돌아온다(교재비는 선택 창). 사건이 없으면 안내만.
+   */
+  talkSerin() {
+    if (this.modal !== 'place') return;
+    const p = this.progress;
+    const r = visitSerin(p, seededRng(p.day * 1000 + p.serin.visits));
+    this.progress = r.progress; this.save();
+    if (!r.event) { this.showNotice('윤서린', ['오늘은 별다른 일이 없다.', r.firstToday ? '호감 +1 (하루 첫 방문)' : '오늘 이미 들렀다.'], 'place'); return; }
+    const ev = r.event, tier = r.tier ? tierName(r.tier) : '';
+    const rare = this.progress.flags[FLAGS.serinJunk] && !p.flags[FLAGS.serinJunk];
+    playStory(this, `편의점 · ${ev.title}`, ev.scenes, s => {
+      if (ev.choice) { goJourney(s, { serinChoice: ev.id }); return; }
+      const a = applyEvent(loadProgress(), ev.id, 'none');
+      saveProgress(a.progress);
+      goJourney(s, { notice: { title: ev.title, lines: [...a.notice, `답례 등급: ${tier}`, ...(rare ? ['고물상 삼촌을 소개받았다(투시경 해금 예정).'] : [])] }, moneyDelta: a.moneyDelta });
+    });
+  }
+  resolveChoice(choice: 'accept' | 'decline') {
+    if (this.modal !== 'choice' || !this.choiceEvent) return;
+    const ev = serinEventById(this.choiceEvent);
+    const a = applyEvent(this.progress, ev.id, choice);
+    this.progress = a.progress; this.save();
+    this.choiceEvent = undefined;
+    this.notice = { title: ev.title, lines: a.notice }; this.modal = 'notice'; this.draw();
+    this.pulseMoney(a.moneyDelta);
   }
   /** 집 휴식: 검은 막이 내려오며 "다음 날" → 진행 갱신·저장 → 막이 걷힌다. 전환 중 입력 잠금. */
   restAtHome() {

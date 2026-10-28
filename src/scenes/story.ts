@@ -4,8 +4,9 @@ import Phaser from 'phaser';
 import { CHARACTERS, PLAYER } from '../character';
 import type { Scene } from '../story/chapters';
 import { DESIGN, MARGIN, STORY } from '../ui/layout';
+import { noteMissing } from '../ui/missing';
 import { drawPortrait, preloadPortraits } from '../ui/portrait';
-import { COLORS, type UI, box, label, panel } from '../ui/widgets';
+import { COLORS, FONT, type UI, box, label, panel } from '../ui/widgets';
 import { SCENE_KEYS, type StoryLaunch } from './flow';
 
 /** 컷 그림 텍스처 키. 같은 경로는 한 번만 읽는다. */
@@ -24,7 +25,8 @@ export class StoryScene extends Phaser.Scene {
     for (const s of scenes) if (s.kind === 'cut' && s.image && !this.textures.exists(cutKey(s.image))) this.load.image(cutKey(s.image), s.image);
     const speakers = Array.from(new Set(scenes.flatMap(s => (s.kind === 'line' ? [s.speaker] : [])))).map(id => CHARACTERS[id]);
     preloadPortraits(this.load, speakers.length ? speakers : [PLAYER]);
-    this.load.once('loaderror', (file: { key: string; src: string }) => { if (file.key.startsWith('cut:')) console.warn('컷 그림이 없어 글자 컷으로 표시합니다:', file.src); });
+    // 컷 그림 읽기 실패는 조용히 기록만(글자 컷으로 표시). 목록은 메뉴 > 개발 정보
+    this.load.on('loaderror', (file: { key: string; src: string }) => { if (file.key.startsWith('cut:')) noteMissing(file.src); });
   }
   create() {
     const { scenes } = this.launch;
@@ -73,19 +75,23 @@ export class StoryScene extends Phaser.Scene {
     if (s.kind === 'cut') this.drawCut(ui, s); else this.drawLine(ui, s);
     label(ui, DESIGN.width / 2, DESIGN.height - STORY.hint.bottom, this.index + 1 < n ? '누르면 다음 · 길게 누르면 빨리 넘김' : '누르면 계속', STORY.hint.size, COLORS.muted, 600, [0.5, 0.5]);
   }
-  /** 큰 컷: 나무 패널 안에 그림(있으면 비율 유지로 맞춤) 또는 어두운 바탕. 글자는 그 아래. */
+  /** 큰 컷: 그림이 있으면 나무 패널 안에 비율 유지로 맞추고 글자는 그 아래. 그림이 없으면 상자 없이 글자를 상자 자리 가운데에 크게(22px, 줄 간격 1.5, 아이보리). */
   drawCut(ui: UI, s: Extract<Scene, { kind: 'cut' }>) {
     const { w, h, y } = STORY.cut, x = (DESIGN.width - w) / 2;
-    panel(ui, x, y, w, h, 'wood');
-    const inner = { x: x + 8, y: y + 8, w: w - 16, h: h - 16 };
-    box(ui, inner.x, inner.y, inner.w, inner.h, 0x0b0f0c);
     const key = s.image ? cutKey(s.image) : undefined;
     if (key && this.textures.exists(key)) {
+      panel(ui, x, y, w, h, 'wood');
+      const inner = { x: x + 8, y: y + 8, w: w - 16, h: h - 16 };
+      box(ui, inner.x, inner.y, inner.w, inner.h, 0x0b0f0c);
       const img = this.add.image(inner.x + inner.w / 2, inner.y + inner.h / 2, key);
       const k = Math.min(inner.w / img.width, inner.h / img.height);
       img.setScale(k); this.layer.add(img);
-    } // 그림이 없으면 어두운 패널만(글자 컷)
-    label(ui, x, y + h + STORY.cut.textGap, s.text, STORY.cut.textSize, COLORS.text, w, [0, 0]);
+      label(ui, x, y + h + STORY.cut.textGap, s.text, STORY.cut.textSize, COLORS.text, w, [0, 0]);
+      return;
+    }
+    const T = STORY.cutText;
+    const t = this.add.text(DESIGN.width / 2, y + h / 2, s.text, { fontFamily: FONT, fontSize: T.size, color: COLORS.text, align: 'center', lineSpacing: Math.round(T.size * (T.lineHeight - 1)), wordWrap: { width: w - T.pad * 2 } }).setOrigin(0.5, 0.5);
+    this.layer.add(t);
   }
   /** 대사: 왼쪽 작은 초상화(있으면 그림, 없으면 자리 표시) + 이름 + 말풍선(어두운 패널). */
   drawLine(ui: UI, s: Extract<Scene, { kind: 'line' }>) {

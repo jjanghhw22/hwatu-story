@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BOTTOM_SAFE, CAPTURED_TAG_H, CARD, CARD_ASPECT, DESIGN, FLOOR_SLOTS, HAND_ARROW, HAND_MAIN_ROW, HAND_TOP_PAD, INFO, LAYOUT, REGIONS, SPEECH, activeBoxRect, capturedLayout, capturedOrder, capturedRects, configureLayout, fanDirection, floorLayout, flowChips, handLayout, miniStep, oppHandLayout, peekButtonRect, rotatedBounds, scoreBadgeRect, speechZone, tableInner } from './layout.ts';
+import { BOTTOM_SAFE, CAPTURED_TAG_H, CARD, CARD_ASPECT, DESIGN, FLOOR_SLOTS, HAND_ARROW, HAND_MAIN_ROW, HAND_TOP_PAD, INFO, LAYOUT, REGIONS, SPEECH, activeBoxRect, capturedLayout, capturedOrder, capturedRects, configureLayout, fanDirection, floorLayout, flowChips, handLayout, miniStep, oppHandLayout, rotatedBounds, scoreBadgeRect, skillBarLayout, speechZone, tableInner } from './layout.ts';
 import { CARDS } from '../cards.ts';
 
 // 다른 테스트는 모두 1280 기준 배치를 본다
@@ -12,13 +12,13 @@ const overlaps = (a: R, b: R) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y
 /** 기울기를 포함한 경계 사각형끼리의 겹침. */
 const overlapsRot = (a: R, b: R) => overlaps(rotatedBounds(a), rotatedBounds(b));
 
-test('영역은 위에서 아래로 겹치지 않고 1280 안에 들어가며, 화투판은 500 이상이다', () => {
-  const order = [REGIONS.topBar, REGIONS.oppInfo, REGIONS.oppCaptured, REGIONS.table, REGIONS.myInfo, REGIONS.myCaptured, REGIONS.hand];
+test('영역은 위에서 아래로 겹치지 않고 1280 안에 들어가며, 화투판은 480 이상이다', () => {
+  const order = [REGIONS.topBar, REGIONS.oppInfo, REGIONS.oppCaptured, REGIONS.table, REGIONS.myInfo, REGIONS.skillBar, REGIONS.myCaptured, REGIONS.hand];
   for (let i = 1; i < order.length; i++) assert.ok(order[i].y >= order[i - 1].y + order[i - 1].h, `영역 ${i} 겹침`);
   assert.ok(REGIONS.hand.y + REGIONS.hand.h <= DESIGN.height, '손패 영역이 화면 안');
   assert.ok(!('skill' in REGIONS), '상시 안내 줄 없음');
   assert.ok(HAND_TOP_PAD >= HAND_ARROW.h + HAND_ARROW.bob, '윗줄 위 여백에 화살표(높이 + 왕복)가 들어간다');
-  assert.ok(REGIONS.table.h >= 500, '화투판 높이 500 이상');
+  assert.ok(REGIONS.table.h >= 480, '화투판 높이 480 이상(기술 줄 40을 뺀 488)');
   assert.equal(REGIONS.oppCaptured.h, 84); assert.equal(REGIONS.myCaptured.h, 84);
   assert.ok(CARD.hand.w > CARD.floor.w && CARD.hand.h > CARD.floor.h, '손패는 바닥패보다 크다');
   assert.ok(CARD.floor.w > CARD.mini.w, '바닥패는 획득 패보다 크다');
@@ -198,30 +198,36 @@ test('상대 손패 뒷면·점수 배지·말풍선 자리·차례 상자는 �
   }
   assert.deepEqual(oppHandLayout(reg, 0, true), []);
   assert.ok(reg.h <= DESIGN.height * 0.15, '상대 영역은 화면 높이의 15% 이내');
-  // 내 패널: 다음 패 보기 버튼(폭 140)은 점수 배지 왼쪽, 차례 상자는 그 왼쪽
-  const my = REGIONS.myInfo, mb = scoreBadgeRect(my, false), pb = peekButtonRect(my), ma = activeBoxRect(my, false);
-  assert.equal(pb.w, 140);
-  assert.ok(pb.x + pb.w < mb.x && ma.x + ma.w < pb.x);
-  for (const r of [mb, pb, ma]) assert.ok(inside(r, my));
+  // 내 패널: 차례 상자는 점수 배지 왼쪽. 기술 줄: 버튼(폭 140) 최대 4개가 가방 버튼(오른쪽 끝)과 겹치지 않는다
+  const my = REGIONS.myInfo, mb = scoreBadgeRect(my, false), ma = activeBoxRect(my, false);
+  assert.ok(ma.x + ma.w < mb.x);
+  for (const r of [mb, ma]) assert.ok(inside(r, my));
+  for (let n = 0; n <= 4; n++) {
+    const sb = skillBarLayout(REGIONS.skillBar, n);
+    assert.equal(sb.buttons.length, n);
+    for (const b of sb.buttons) { assert.equal(b.w, 140); assert.ok(inside(b, REGIONS.skillBar)); assert.ok(b.x + b.w < sb.bag.x, '기술 버튼이 가방 버튼과 겹치지 않음'); }
+    assert.ok(inside(sb.bag, REGIONS.skillBar) && inside(sb.preview, REGIONS.skillBar));
+    if (n < 4) assert.ok(sb.preview.x + sb.preview.w <= sb.bag.x, '공개 패 자리도 가방 버튼 앞');
+  }
 });
 
 test('긴 화면: configureLayout이 높이·안전 여백에 따라 영역을 다시 계산하고 1280에서는 기존 값과 같다', () => {
   const snapshot = JSON.stringify(REGIONS);
-  const regionsInOrder = () => [REGIONS.topBar, REGIONS.oppInfo, REGIONS.oppCaptured, REGIONS.table, REGIONS.myInfo, REGIONS.myCaptured, REGIONS.hand];
+  const regionsInOrder = () => [REGIONS.topBar, REGIONS.oppInfo, REGIONS.oppCaptured, REGIONS.table, REGIONS.myInfo, REGIONS.skillBar, REGIONS.myCaptured, REGIONS.hand];
   const panelSizes = () => [REGIONS.oppInfo.h, REGIONS.oppCaptured.h, REGIONS.myInfo.h, REGIONS.myCaptured.h, CARD.hand.w, CARD.hand.h, CARD.mini.h];
   const base = panelSizes();
   try {
     // 1280: 기존 값 그대로
     configureLayout(1280);
     assert.equal(JSON.stringify(REGIONS), snapshot);
-    assert.equal(DESIGN.height, 1280); assert.equal(REGIONS.table.h, 528); assert.equal(REGIONS.hand.y, 884); assert.equal(LAYOUT.handTopPad, HAND_TOP_PAD);
-    // 1600: 겹치지 않고 1600 안, 화투판 ≥ 528(+70%), 손패 위 여백 +30%
+    assert.equal(DESIGN.height, 1280); assert.equal(REGIONS.table.h, 488); assert.equal(REGIONS.hand.y, 884); assert.equal(LAYOUT.handTopPad, HAND_TOP_PAD);
+    // 1600: 겹치지 않고 1600 안, 화투판 ≥ 488(+70%), 손패 위 여백 +30%
     configureLayout(1600);
     assert.equal(DESIGN.height, 1600);
     const o = regionsInOrder();
     for (let i = 1; i < o.length; i++) assert.ok(o[i].y >= o[i - 1].y + o[i - 1].h, `1600: 영역 ${i} 겹침`);
     assert.equal(REGIONS.hand.y + REGIONS.hand.h, 1600);
-    assert.ok(REGIONS.table.h >= 528); assert.equal(REGIONS.table.h, 528 + 224); assert.equal(LAYOUT.handTopPad, HAND_TOP_PAD + 96);
+    assert.ok(REGIONS.table.h >= 488); assert.equal(REGIONS.table.h, 488 + 224); assert.equal(LAYOUT.handTopPad, HAND_TOP_PAD + 96);
     assert.deepEqual(panelSizes(), base, '패널·카드 크기는 높이와 무관');
     for (const r of handLayout(12)) assert.ok(inside(r, REGIONS.hand));
     // 1600에서도 바닥 12자리(3장 묶음 포함)가 영역 안에서 겹치지 않고 카드 크기는 1280과 같다(세로 간격만 넓어짐)
@@ -250,7 +256,7 @@ test('긴 화면: configureLayout이 높이·안전 여백에 따라 영역을 �
     for (let i = 1; i < o2.length; i++) assert.ok(o2[i].y >= o2[i - 1].y + o2[i - 1].h, `1560: 영역 ${i} 겹침`);
     // 1440: 배분 공식(160의 70% → 화투판 112, 30% → 여백 48)
     configureLayout(1440);
-    assert.equal(REGIONS.table.h, 640); assert.equal(LAYOUT.handTopPad, 72); assert.equal(REGIONS.hand.y, 1440 - (72 + CARD.hand.h * 2 + 10 + BOTTOM_SAFE));
+    assert.equal(REGIONS.table.h, 600); assert.equal(LAYOUT.handTopPad, 72); assert.equal(REGIONS.hand.y, 1440 - (72 + CARD.hand.h * 2 + 10 + BOTTOM_SAFE));
   } finally {
     configureLayout(1280);
   }

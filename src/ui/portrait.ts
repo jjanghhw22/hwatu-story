@@ -2,6 +2,7 @@
 // 표정 그림이 없는 표정은 기본 그림(normal)을 쓰고 표정 배지와 작은 움직임만 더한다. 그림 교체·조정은 character.ts에서만 한다.
 import type Phaser from 'phaser';
 import { type Character, MOODS, type Mood, cropSquare, portraitKeyCandidates, portraitTextureKey } from '../character';
+import { noteMissing } from './missing';
 import { COLORS, type UI, label } from './widgets';
 
 /** 원형 초상화 텍스처를 화면 지름의 몇 배로 만들지(휴대폰 고해상도에서 흐려지지 않게). */
@@ -13,9 +14,8 @@ export function preloadPortraits(loader: Phaser.Loader.LoaderPlugin, chars: Char
     const key = portraitTextureKey(c, mood as Mood);
     if (file && !loader.textureManager.exists(key)) loader.image(key, file);
   }
-  loader.once('loaderror', (file: { key: string; src: string }) => {
-    if (file.key.startsWith('portrait-')) console.warn('캐릭터 그림을 읽지 못해 자리 표시 초상화를 씁니다:', file.key, file.src);
-  });
+  // 읽기 실패는 조용히 기록만(자리 표시 초상화로 대신). 목록은 메뉴 > 개발 정보.
+  loader.on('loaderror', (file: { key: string; src: string }) => { if (file.key.startsWith('portrait-')) noteMissing(file.src); });
 }
 
 export type PortraitView = { container: Phaser.GameObjects.Container; cx: number; cy: number; r: number };
