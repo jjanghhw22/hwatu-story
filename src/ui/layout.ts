@@ -370,3 +370,40 @@ export function miniStep(n: number, availW: number, cardW: number, maxStep: numb
   if (n <= 1) return maxStep;
   return Math.max(CARD.mini.minStep, Math.min(maxStep, Math.floor((availW - cardW) / (n - 1))));
 }
+
+// ---- 집중력 바(내 정보 패널) ----
+/** 집중력 바: 가로 120, 금색. 이름 아래 왼쪽에 두고 그 오른쪽에 "현재/최대" 작은 글자(labelW 안). */
+export const FOCUS_BAR = { w: 120, h: 10, labelW: 64, labelSize: 11, fill: 0xe0b64f, track: 0x0f1a16 } as const;
+/** 내 정보 패널 안 집중력 바 자리(패널 아래쪽, 초상화 오른쪽 열과 같은 x). */
+export function focusBarRect(reg: Rect): Rect {
+  const x = MARGIN + 26 + INFO.portraitSmall * 2;
+  return { x, y: reg.y + reg.h - 3 - 7 - FOCUS_BAR.h, w: FOCUS_BAR.w, h: FOCUS_BAR.h };
+}
+
+// ---- 여정 지도 ----
+/** 여정 지도: 머리 패널(day·소지금·압류 예고), 장소 노드(세로 지그재그 원), 아래 메뉴 버튼. 세로 간격은 화면 높이에 맞춰 늘린다. */
+export const JOURNEY = {
+  header: { y: 16, h: 104 },
+  node: { r: 44, ring: 4, xLeft: 210, xRight: 510, firstY: 220, stepMin: 104, stepMax: 140, labelGap: 8 },
+  bottom: { h: 56, pad: 14 },
+  /** 밤 → 아침 전환(검은 막) 전체 시간(ms). */
+  nightMs: 400,
+} as const;
+/** 장소 노드 n개의 중심 좌표(위 → 아래, 왼쪽·오른쪽 번갈아). 아래 메뉴 버튼 위까지의 높이를 n−1 간격으로 나눈다(stepMin~stepMax). */
+export function journeyNodes(n: number): { x: number; y: number }[] {
+  const { node, bottom } = JOURNEY;
+  const bottomY = DESIGN.height - bottom.h - bottom.pad * 2 - node.r - 40;
+  const step = n <= 1 ? 0 : Math.max(node.stepMin, Math.min(node.stepMax, Math.floor((bottomY - node.firstY) / (n - 1))));
+  return Array.from({ length: n }, (_, i) => ({ x: i % 2 === 0 ? node.xLeft : node.xRight, y: node.firstY + i * step }));
+}
+
+// ---- 이야기 화면 ----
+/** 이야기 화면: 상단 머리글, 컷 패널(그림 또는 어두운 패널) + 아래 글자, 대사(왼쪽 초상화 + 말풍선), 아래 안내. */
+export const STORY = {
+  header: { y: 22, size: 15 },
+  cut: { w: 640, h: 460, y: 120, textGap: 22, textSize: 20 },
+  line: { portraitR: 40, bubbleMinH: 120, textSize: 20, pad: 18, /** 말풍선 위 y = 화면 높이 × 이 비율 */ yRatio: 0.38 },
+  hint: { size: 13, bottom: 36 },
+  /** 길게 누르기 판정(ms)과 빨리 넘김 간격(ms). */
+  longPressMs: 450, fastStepMs: 220,
+} as const;

@@ -4,7 +4,7 @@ import type { GukjinChoice } from '../game';
 import type { Declared, Score } from '../score';
 import type { Character, Mood } from '../character';
 import { drawMiniBack, drawMiniCard } from './cardView';
-import { CAPTURED_EMPTY_ALPHA, CAPTURED_TAG_H, CHIP_COLORS, COUNT_BADGE, type CapturedRects, INFO, MARGIN, type Rect, activeBoxRect, capturedRects, flowChips, oppHandLayout, scoreBadgeRect, speechZone } from './layout';
+import { CAPTURED_EMPTY_ALPHA, CAPTURED_TAG_H, CHIP_COLORS, COUNT_BADGE, type CapturedRects, FOCUS_BAR, INFO, MARGIN, type Rect, activeBoxRect, capturedRects, flowChips, focusBarRect, oppHandLayout, scoreBadgeRect, speechZone } from './layout';
 import { type PortraitView, drawPortrait } from './portrait';
 import { COLORS, type UI, box, chip, countBadge, label, measureText, outlined, panel } from './widgets';
 
@@ -22,6 +22,8 @@ export type PlayerInfo = {
   big: boolean;
   /** 이 판의 선(先). 지금은 호출하는 쪽이 플레이어 0에 true를 넘긴다(선 교대 규칙 없음). */
   first: boolean;
+  /** 내 패널만: 집중력(현재/최대). 있으면 이름 아래 왼쪽에 금색 바로 그린다(규칙 상태가 아니라 이야기 진행 값). */
+  focus?: { cur: number; max: number };
 };
 
 export type StatusChip = { text: string; color: number; alpha?: number };
@@ -69,8 +71,17 @@ export function drawPlayerInfo(ui: UI, reg: Rect, p: PlayerInfo): { scoreText: P
   const widths = chips.map(c => measureText(ui.scene, c.text, INFO.chip.size, true));
   const act = activeBoxRect(reg, p.big);
   const maxX = p.big ? speechZone(reg).x - 6 : act.x - 8;
-  const rects = p.big ? flowChips(widths, xLeft, reg.y + 30, maxX) : flowChips(widths, x + name.width + 10, nameY, maxX, xLeft);
+  // 집중력 바가 있으면 칩의 둘째 줄은 바와 글자 오른쪽부터 시작해 겹치지 않는다
+  const fb = focusBarRect(reg);
+  const xRow2 = p.focus ? fb.x + fb.w + FOCUS_BAR.labelW : xLeft;
+  const rects = p.big ? flowChips(widths, xLeft, reg.y + 30, maxX) : flowChips(widths, x + name.width + 10, nameY, maxX, xRow2);
   chips.forEach((c, i) => chip(ui, rects[i], c.text, c.color, c.alpha ?? 1));
+  if (p.focus) {
+    const ratio = p.focus.max > 0 ? Math.min(1, Math.max(0, p.focus.cur / p.focus.max)) : 0;
+    box(ui, fb.x, fb.y, fb.w, fb.h, FOCUS_BAR.track, 1, COLORS.brassDim);
+    if (ratio > 0) box(ui, fb.x + 1, fb.y + 1, Math.max(1, Math.round((fb.w - 2) * ratio)), fb.h - 2, FOCUS_BAR.fill);
+    label(ui, fb.x + fb.w + 6, fb.y + fb.h / 2, `집중력 ${p.focus.cur}/${p.focus.max}`, FOCUS_BAR.labelSize, COLORS.gold, FOCUS_BAR.labelW + 40, [0, 0.5], true);
+  }
   if (p.active) { box(ui, act.x, act.y, act.w, act.h, 0xe0b64f); label(ui, act.x + act.w / 2, act.y + act.h / 2, p.activeText, 13, COLORS.dark, act.w, [0.5, 0.5], true); }
   if (p.big && p.handCount !== undefined) oppHandLayout(reg, p.handCount, p.active).forEach((h, i) => { if (p.handVisible?.[i] === false) return; drawMiniBack(ui, h.x, h.y, h.w, h.h); });
   return { scoreText, portrait };

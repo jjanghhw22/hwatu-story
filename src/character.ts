@@ -1,5 +1,5 @@
 // 캐릭터 데이터. 초상화 상태(표정)와 그림 표시 설정을 데이터로 분리해, 그림이 늘어나면 파일 경로와 수치만 바꾸면 된다.
-// 이 모듈은 Phaser에 의존하지 않는다(순수 계산은 테스트로 검증).
+// 이 모듈은 Phaser에 의존하지 않는다(순수 계산은 테스트로 검증). 인물 목록은 docs/story/시나리오-바이블.md 1절을 따른다.
 export type Mood = 'normal' | 'surprised' | 'flustered' | 'happy' | 'defeated';
 
 export type MoodInfo = {
@@ -26,13 +26,21 @@ export const MOODS: Record<Mood, MoodInfo> = {
  */
 export type ImageFit = { focus: readonly [number, number]; zoom: number };
 
+/** 인물 id. 초상화 텍스처 키와 이야기 데이터(대사의 speaker)가 이 값을 쓴다. */
+export type CharacterId =
+  | 'player' | 'barber' | 'seorin' | 'ma' | 'bokhee' | 'taeoh' | 'bonggu' | 'sangcheol'
+  | 'jeongho' | 'yura' | 'sangman' | 'mujin' | 'father' | 'bamcha' | 'stranger';
+
 export type Character = {
-  key: string;
+  key: CharacterId;
   name: string;
+  /** 별명(바이블의 따옴표 이름). 없으면 이름만 쓴다. */
+  nickname?: string;
   /** 그림을 읽지 못했을 때 자리 표시 초상화에 쓰는 글자. */
   initial: string;
   /**
-   * 표정별 그림 파일(public 기준 경로). 지금은 각 인물의 기본 표정(normal) 한 장뿐이다.
+   * 표정별 그림 파일(public 기준 경로). 지금은 승인된 두 인물(장대식·한도윤)의 기본 표정(normal) 한 장뿐이고,
+   * 나머지 인물은 경로만 적어 두었다(파일 없음 → 읽기 실패 → 자리 표시). 그림이 생기면 같은 경로에 넣기만 하면 된다.
    * 없는 표정은 normal 그림으로 대신하고, normal도 읽지 못하면 자리 표시(실루엣·이니셜)로 돌아간다.
    */
   portraits: Partial<Record<Mood, string>>;
@@ -44,20 +52,46 @@ export type Character = {
 
 export const CHARACTER_ASSET_DIR = 'assets/characters';
 
-/** 첫 상대. 승인된 2D 기본 표정 한 장(barber-neutral.png). 다른 표정 그림은 아직 없다. */
+/** 아직 그림이 없는 인물의 기본 설정(그림이 오면 인물별로 조정). */
+const DEFAULT_FIT: Pick<Character, 'portraitFit' | 'bustFit'> = { portraitFit: { focus: [0.5, 0.25], zoom: 2.2 }, bustFit: { focus: [0.5, 0.45], zoom: 1.15 } };
+const portraitOf = (file: string) => ({ normal: `${CHARACTER_ASSET_DIR}/${file}` });
+const pending = (key: CharacterId, name: string, initial: string, nickname?: string): Character =>
+  ({ key, name, nickname, initial, portraits: portraitOf(`${key}-neutral.png`), ...DEFAULT_FIT });
+
+/** 첫 상대이자 스승. 승인된 2D 기본 표정 한 장(barber-neutral.png). 다른 표정 그림은 아직 없다. */
 export const BARBER: Character = {
-  key: 'barber', name: '이발소 주인', initial: '이',
-  portraits: { normal: `${CHARACTER_ASSET_DIR}/barber-neutral.png` },
+  key: 'barber', name: '장대식', initial: '장',
+  portraits: portraitOf('barber-neutral.png'),
   portraitFit: { focus: [0.39, 0.25], zoom: 2.3 },
   bustFit: { focus: [0.5, 0.45], zoom: 1.15 },
 };
-/** 플레이어. 승인된 2D 기본 표정 한 장(hero-neutral.png). */
+/** 플레이어. 승인된 2D 기본 표정 한 장(hero-neutral.png, 파일 이름은 승인 당시 그대로). */
 export const PLAYER: Character = {
-  key: 'player', name: '나', initial: '나',
-  portraits: { normal: `${CHARACTER_ASSET_DIR}/hero-neutral.png` },
+  key: 'player', name: '한도윤', initial: '도',
+  portraits: portraitOf('hero-neutral.png'),
   portraitFit: { focus: [0.5, 0.255], zoom: 2.2 },
   bustFit: { focus: [0.5, 0.45], zoom: 1.15 },
 };
+
+/** 모든 인물(바이블 1절 + 2장 연습 상대 '밤차' + 6장 익명 상대). 그림 파일은 두 인물만 있다. */
+export const CHARACTERS: Record<CharacterId, Character> = {
+  player: PLAYER,
+  barber: BARBER,
+  seorin: pending('seorin', '윤서린', '서'),
+  ma: pending('ma', '마철수', '마', '마 사장'),
+  bokhee: pending('bokhee', '오복희', '복'),
+  taeoh: pending('taeoh', '문태오', '태'),
+  bonggu: pending('bonggu', '강봉구', '강', '닻손'),
+  sangcheol: pending('sangcheol', '조상철', '조', '뱀눈'),
+  jeongho: pending('jeongho', '민정호', '민', '계산기'),
+  yura: pending('yura', '차유라', '차', '배우'),
+  sangman: pending('sangman', '구상만', '구', '문지기'),
+  mujin: pending('mujin', '백무진', '백', '왕'),
+  father: pending('father', '한기석', '한'),
+  bamcha: pending('bamcha', '밤차', '밤'),
+  stranger: pending('stranger', '고액 판 상대', '?'),
+};
+export const CHARACTER_IDS = Object.keys(CHARACTERS) as CharacterId[];
 
 export function portraitTextureKey(c: Character, mood: Mood) { return `portrait-${c.key}-${mood}`; }
 
