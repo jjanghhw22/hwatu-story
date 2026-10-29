@@ -7,7 +7,7 @@ import {type Opponent,publicView} from './ai';
 import {type Rng,seededRng} from './rng';
 import {type DialogEvent,DialogPolicy,EVENT_MOOD} from './dialog';
 import {CHARACTERS,type Character,MOODS,type Mood,PLAYER} from './character';
-import {type Chapter,chapterById,chapterLabel} from './story/chapters';
+import {type Chapter,ch8Choice,chapterById,chapterLabel,chapterWinVariant} from './story/chapters';
 import {OPPONENTS,type OpponentProfile,resolveOpponent} from './story/opponents';
 import {SKILLS,type SkillId} from './story/skills';
 import {type Progress,addMoney,banPlace,bump,winsKey,canSpendFocus,formatWon,formatWonDelta,loadProgress,saveProgress,setFlag,settleStake,skillCostWithBoost,spendFocus,takeFromBag,withFocus} from './story/progress';
@@ -21,6 +21,10 @@ import {markBluff,pickBluff} from './story/bluff';
 import {TIMER_WARN_MS,assistAction,autoAction,autoChoice,turnLimitMs} from './story/tempo';
 import {NEAR_MISS_FLAG,effectiveStake,isNearMiss,nextBigRound} from './story/bigtable';
 import {completeErrand,errandById} from './story/errands';
+import {CATCH_WINDOW_MS,cheatReaction,decideCheat,pickCheatCard} from './story/cheat';
+import {type CaptureKind,FATHER_READ_TURN,canFold,captureStreak,fatherRead,isSkillRead,justRead,learnerPolicy,pickWatchTarget,shouldTeachFold} from './story/learner';
+import {FATHER_READ,FATHER_TEACH_FOLD,TAEOH_READ} from './story/lines';
+import {taeohAvailable} from './story/tempo';
 import type {ItemId} from './story/items';
 import {type TableLaunch,SCENE_KEYS,finishChapterWin,goJourney,nextBigTable} from './scenes/flow';
 import {BootScene} from './scenes/boot';
@@ -53,7 +57,7 @@ const EVENT_BANNER:Record<TurnEvent,{style:BannerStyle;ms:number;size:number;sha
 };
 /** 선언 근거 요약: "1월 흔들기+폭탄, 3월 폭탄". */
 const declText=(d:Declared[])=>d.map(x=>`${x.month}월 ${x.kinds.join('+')}`).join(', ');
-type Phase='dealing'|'hand'|'swap'|'choice'|'gukjin'|'gostop'|'busy'|'result'|'menu'|'credits'|'gallery'|'scenarios'|'capturedView'|'rules'|'devinfo';
+type Phase='dealing'|'hand'|'swap'|'catch'|'choice'|'gukjin'|'gostop'|'busy'|'result'|'menu'|'credits'|'gallery'|'scenarios'|'capturedView'|'rules'|'devinfo';
 /** 플레이어(사람·컴퓨터)가 자기 턴에 고르는 행동. target: 같은 월 바닥패 2장 중 미리 고른 id(컴퓨터). */
 type Action={kind:'normal';index:number;shakeMonth?:number;target?:number}|{kind:'bomb';month:number}|{kind:'flip'};
 /** 바닥패 2장 중 고르기. 사람은 선택창, 컴퓨터는 공개된 카드(손패 또는 뒤집은 더미 패)와 공개 정보로 판단한다. */
@@ -111,6 +115,14 @@ class TableScene extends Phaser.Scene {
   nearMissShown=false;
   /** 속공 타이머(강봉구): 마감 시각·종류·고리 그래픽·갱신 이벤트·마지막으로 틱을 낸 초. */
   timerDeadline=0; timerKind?:'hand'|'choice'|'gostop'; timerGfx?:Phaser.GameObjects.Graphics; timerEvent?:Phaser.Time.TimerEvent; timerTick=-1;
+  /** 남은 초 큰 숫자(손패 윗줄 위 가운데)와 고/스톱 창 제목 옆 숫자. */
+  timerText?:Phaser.GameObjects.Text; timerSec?:number;
+  /** 간파: 다음 상대 차례를 지켜보는 중. 상대 속임수 횟수, 진동 손목시계 경고를 썼는지, 잡기 창 대기, 잡기로 이겼는지. */
+  watching=false; cheatsUsed=0; hasBuzz=false; buzzUsed=false; catchResolve?:(d:'catch'|'ignore')=>void; catchTimer?:Phaser.Time.TimerEvent;
+  /** 학습형(태오): 기술별 사용 횟수, 쓴 순서(회중시계 대상), 내 차례별 먹은 분류, 저지 강화 여부. */
+  skillUses:Partial<Record<SkillId,number>>={}; usedOrder:SkillId[]=[]; captureHistory:CaptureKind[][]=[]; learnerBlock=false;
+  /** 아버지: 상대 차례 수(손패 읽기), 임시 접기 버튼(이 판만, 비용 0), 회중시계를 썼는지. */
+  oppTurns=0; tempFold=false; foldTaught=false; watchUsed=false;
   get names(){return [PLAYER.name,this.oppChar.name];}
   selectable:number[]=[]; peek=false;
   /** 대기 중인 선택의 resolve. 모달 버튼이 이것을 호출해 흐름을 이어간다. */
@@ -176,15 +188,21 @@ class TableScene extends Phaser.Scene {
     this.taunt=newTauntState();this.tauntNow=false;
     this.stake=effectiveStake(this.launch);this.moneyDelta=0;
     this.bagOpen=false;this.revealBluff=false;
-    this.taeohAvail=!this.launch.scenario&&this.progress.chapterId==='ch5';this.taeohUses=this.taeohAvail?1:0;
+    this.taeohAvail=!this.launch.scenario&&taeohAvailable(this.progress.chapterId,this.progress.flags);this.taeohUses=this.taeohAvail?1:0;
+    this.watching=false;this.cheatsUsed=0;this.hasBuzz=this.gear.includes('buzzWatch');this.buzzUsed=false;this.catchResolve=undefined;this.catchTimer=undefined;
+    this.skillUses={};this.usedOrder=[];this.captureHistory=[];this.learnerBlock=false;
+    this.oppTurns=0;this.tempFold=false;this.foldTaught=false;this.watchUsed=false;this.timerSec=undefined;
     this.nearMissShown=this.progress.flags[NEAR_MISS_FLAG]===true;
     this.timerDeadline=0;this.timerKind=undefined;this.timerEvent=undefined;this.timerTick=-1;
     // 도발형 상대는 고/스톱 정책을 래퍼로 감싼다(도발에 응하면 공격적). 규칙 함수(canDecide/canGo)는 그대로.
     if(this.profile.taunt)this.opponent=provokedPolicy(this.opponent,()=>this.taunt.provoked);
+    // 학습형(태오): 내가 3턴 연속 같은 분류를 먹으면 저지 강화(공개 정보만)
+    if(this.profile.learner)this.opponent=learnerPolicy(this.opponent,()=>this.learnerBlock);
   }
   preload(){preloadCardAssets(this.load);preloadPortraits(this.load,[this.oppChar,PLAYER]);}
   create(){
     this.timerGfx=this.add.graphics().setDepth(50);
+    this.timerText=this.add.text(DESIGN.width/2,0,'',{fontFamily:'"NanumGothic", sans-serif',fontSize:40,fontStyle:'bold',color:COLORS.text,stroke:'#000000',strokeThickness:6}).setOrigin(0.5).setDepth(51).setVisible(false);
     this.scenarioKey=this.launch.scenario;
     const sc=this.scenarioKey?findScenario(this.scenarioKey):undefined;
     this.state=new GameState(sc?.setup);
@@ -215,7 +233,7 @@ class TableScene extends Phaser.Scene {
     return this.chapter?chapterLabel(this.chapter):'자유 대결';
   }
   /** 이전 판의 트윈·배너·말풍선·예약 작업·소리·음성 예약을 모두 정리한다. 세대 번호를 올려 남은 비동기 처리가 새 판에 반영되지 않게 한다. */
-  teardown(){this.stopTurnTimer();this.gen++;this.fx.clear();this.slides.reset();this.killArrows();this.time.removeAllEvents();this.tweens.killAll();this.sfx.cancel();this.voice.cancel();this.choiceResolve=undefined;this.gukjinResolve=undefined;this.gostopResolve=undefined;this.resultTimer=undefined;this.moodTimer=undefined;}
+  teardown(){this.stopTurnTimer();this.catchTimer?.remove(false);this.catchResolve=undefined;this.gen++;this.fx.clear();this.slides.reset();this.killArrows();this.time.removeAllEvents();this.tweens.killAll();this.sfx.cancel();this.voice.cancel();this.choiceResolve=undefined;this.gukjinResolve=undefined;this.gostopResolve=undefined;this.resultTimer=undefined;this.moodTimer=undefined;}
   /** 새 판(같은 장·상대·연습 여부, 시나리오는 지정한 것으로). 결과창 버튼이 여러 번 눌려도 한 번만 동작한다. */
   restart(scenario?:string){if(this.restarting)return;this.restarting=true;const next:TableLaunch={...this.launch,scenario};this.scene.restart(next);}
   /** "한 판 더": 시작 데이터 그대로(이야기 장면 반복 없음). */
@@ -227,7 +245,18 @@ class TableScene extends Phaser.Scene {
     // 6장 큰 판: 1판째를 이기면 짧은 컷 뒤 2판째, 2판째를 이기면 장 완료
     const nextRound=this.launch.bigRound?nextBigRound(this.launch.bigRound):null;
     if(nextRound){nextBigTable(this,this.launch,nextRound);return;}
-    finishChapterWin(this,this.chapter);
+    // 7장: 잡기로 이기면 원본/아니면 사본, 9장: 접었는지/이겼는지에 따라 after 앞 장면과 플래그가 다르다
+    const r=this.state.result;
+    finishChapterWin(this,this.chapter,chapterWinVariant(this.chapter.id,{caught:r?.outcome==='승리'&&r.endKind==='caught',folded:r?.outcome==='승리'&&r.endKind==='fold'}));
+  }
+  /** 8장 승리 뒤 선택: 받아들인다(9장부터 태오 버튼) / 자료만 받는다. */
+  chooseCh8(accept:boolean){if(this.restarting||!this.chapter)return;this.restarting=true;finishChapterWin(this,this.chapter,ch8Choice(accept));}
+  /** 기술 배우기 대결(박 기사 → 간파) 승리: 기술 습득 + 진동 손목시계 상점 해금 → 지도. */
+  finishLesson(){
+    if(this.restarting||!this.launch.lesson)return;this.restarting=true;
+    const id=this.launch.lesson, q=loadProgress();
+    saveProgress(setFlag({...q,skills:q.skills.includes(id)?q.skills:[...q.skills,id]},'ch7.courier'));
+    goJourney(this,{notice:{title:`${SKILLS[id].name}를 배웠다`,lines:[SKILLS[id].desc,'상점에 진동 손목시계(12,000원)가 들어왔다.']}});
   }
   /** 심부름 대결 승리: 심부름 완료 → 지도(안내 한 줄). */
   finishErrand(){
@@ -245,9 +274,13 @@ class TableScene extends Phaser.Scene {
     saveProgress(p);
   }
   /** 기술 비용: 캔커피 효과가 살아 있으면 첫 기술 −10. */
-  skillCost(id:SkillId){return skillCostWithBoost(SKILLS[id].cost,this.coffeeBoost);}
+  skillCost(id:SkillId){if(id==='fold'&&this.tempFold)return 0;return skillCostWithBoost(SKILLS[id].cost,this.coffeeBoost);}
+  /** 학습형 상대에게 읽혀 잠긴 기술(같은 기술 두 번 뒤). */
+  isRead(id:SkillId){return !!this.profile.learner&&isSkillRead(this.skillUses,id);}
   canUseSkill(sk:{id:SkillId;uses:number}){
-    if(this.phase!=='hand'||sk.uses<=0||!canSpendFocus(this.focus,this.skillCost(sk.id)))return false;
+    if(this.phase!=='hand'||sk.uses<=0||!canSpendFocus(this.focus,this.skillCost(sk.id))||this.isRead(sk.id))return false;
+    if(sk.id==='readThrough')return !this.watching;
+    if(sk.id==='fold')return canFold(this.state);
     if(sk.id==='eye')return this.state.deck.length>0;
     if(sk.id==='calmFace')return !this.taunt.calmed||this.suspicion>0;
     if(sk.id==='lookAway')return !this.ignoreBluffThisTurn;
@@ -260,7 +293,9 @@ class TableScene extends Phaser.Scene {
     if(!sk||!this.canUseSkill(sk))return;
     // 바꿔치기는 패를 고른 뒤(doSwap) 비용을 치른다(취소하면 무료)
     if(id==='swap'){this.phase='swap';this.message='바꿀 패를 고르세요 (취소: 바꿔치기 버튼)';this.draw();return;}
-    this.focus=spendFocus(this.focus,this.skillCost(id));sk.uses-=1;this.consumeCoffee();
+    this.focus=spendFocus(this.focus,this.skillCost(id));sk.uses-=1;this.consumeCoffee();this.noteSkillUse(id);
+    if(id==='fold'){this.stopTurnTimer();this.state.forfeit(0,{kind:'fold'});this.showResult('불리한 판을 접었습니다.');return;}
+    if(id==='readThrough'){this.watching=true;this.message=`${SKILLS.readThrough.name}: 다음 상대 차례를 지켜본다.`;}
     if(id==='eye'){
       this.peek=true;this.peekCount=this.eyePlus?2:1;
       const shown=s.deck.slice(0,this.peekCount).map(n=>`${n.month}월 ${n.name} ${n.title}(${kindLabel(n)})`);
@@ -285,12 +320,25 @@ class TableScene extends Phaser.Scene {
     if(!this.launch.scenario){const p=takeFromBag(loadProgress(),'glucoseCandy');if(p)saveProgress(p);}
     this.message=`포도당 사탕: 집중력 ${before} → ${this.focus}`;this.bagOpen=false;this.draw();
   }
+  /** 기술 사용 기록(학습형 잠김·회중시계). 태오에게 두 번째로 쓴 순간 "그거 또 쓸 줄 알았어." */
+  noteSkillUse(id:SkillId){
+    this.skillUses={...this.skillUses,[id]:(this.skillUses[id]??0)+1};this.usedOrder.push(id);
+    if(this.profile.learner&&justRead(this.skillUses,id)){this.setMood('happy');this.fx.speech(TAEOH_READ,speechZone());}
+  }
+  /** 낡은 회중시계(대결당 1회): 이번 판에 쓴 정직 기술 하나(가장 최근)의 남은 횟수 +1. 속임수·희귀 기술 제외. */
+  useWatch(){
+    if(this.phase!=='hand'||this.watchUsed||!this.gear.includes('pocketWatch'))return;
+    const id=pickWatchTarget(this.usedOrder,this.skills);if(!id)return;
+    const sk=this.skills.find(x=>x.id===id)!;sk.uses+=1;this.watchUsed=true;this.bagOpen=false;
+    this.message=`낡은 회중시계: ${SKILLS[id].name}를 한 번 더 쓸 수 있다.`;this.draw();
+  }
   /** 가방 팝업 항목: 포도당 사탕(가방에 있으면), 장착한 무표정 마스크·투시경. 쓴 것은 비활성. */
   bagItems():{name:string;on:boolean;onTap:()=>void}[]{
     const out:{name:string;on:boolean;onTap:()=>void}[]=[];
     const hand=this.phase==='hand';
     if(this.candies>0||this.candyUsed)out.push({name:this.candyUsed?'사탕 · 씀':`사탕 ${this.candies}`,on:hand&&!this.candyUsed&&this.candies>0,onTap:()=>this.useCandy()});
     if(this.gear.includes('blankMask')){const used=this.gearUsed.has('blankMask');out.push({name:used?'마스크 · 씀':'마스크',on:hand&&!used&&this.suspicion>0,onTap:()=>this.useMask()});}
+    if(this.gear.includes('pocketWatch'))out.push({name:this.watchUsed?'회중시계 · 씀':'회중시계',on:hand&&!this.watchUsed&&pickWatchTarget(this.usedOrder,this.skills)!==null,onTap:()=>this.useWatch()});
     if(this.gear.includes('xrayGlasses')){const used=this.gearUsed.has('xrayGlasses');out.push({name:used?'투시경 · 씀':'투시경',on:hand&&!used&&this.state.hands[1].length>0,onTap:()=>this.useXray()});}
     return out;
   }
@@ -357,7 +405,8 @@ class TableScene extends Phaser.Scene {
     const btns:Btn[]=this.skills.map(sk=>{
       const def=SKILLS[sk.id], cost=this.skillCost(sk.id);
       if(sk.id==='swap'&&this.phase==='swap')return {key:sk.id,name:'취소',badge:'',on:true,onTap:()=>this.cancelSwap(),fill:0xe0875a};
-      return {key:sk.id,name:def.short,badge:sk.uses>0?`${cost}${this.coffeeBoost?'*':''}·${sk.uses}`:'다 씀',on:this.canUseSkill(sk),onTap:()=>this.useSkill(sk.id)};
+      if(this.isRead(sk.id))return {key:sk.id,name:def.short,badge:'읽혔다',on:false,onTap:()=>undefined};
+      return {key:sk.id,name:def.short,badge:sk.uses>0?`${cost}${this.coffeeBoost?'*':''}·${sk.uses}`:'다 씀',on:this.canUseSkill(sk),onTap:()=>this.useSkill(sk.id),fill:sk.id==='fold'&&this.tempFold?0xffe08a:undefined};
     });
     if(this.taeohAvail)btns.push({key:'taeoh',name:'태오',badge:this.taeohUses>0?'0·1':'다 씀',on:this.phase==='hand'&&this.taeohUses>0,onTap:()=>{void this.useTaeoh();},fill:0x8eb4e3});
     const sbL=skillBarLayout(REGIONS.skillBar,btns.length);
@@ -411,6 +460,12 @@ class TableScene extends Phaser.Scene {
   }
   drawModals(myBase:number,theirBase:number){
     const ui=this.ui, s=this.state;
+    if(this.phase==='catch'){
+      drawModal(ui,{title:'속임수다!',titleColor:'#e03a3a',edgeColor:0xc0392b,alpha:.6,lines:[{text:`${this.names[1]}의 손이 더미 윗장으로 간다. 지금 잡을까?`,size:20,color:COLORS.text},{text:'2.5초 안에 고르지 않으면 모른 척한다.',size:TEXT_MIN}],buttons:[
+        {text:'잡는다',onTap:()=>this.decideCatch('catch'),fill:0xe03a3a},
+        {text:'모른 척한다',onTap:()=>this.decideCatch('ignore')},
+      ]});
+    }
     if(this.phase==='gukjin'){
       const p=s.previewGukjin(0);
       drawModal(ui,{title:'9월 국진을 어떻게 사용할까요?',card:GUKJIN_ID,lines:[{text:'한 번 정하면 이 판에서는 바꿀 수 없습니다. 열끗과 피 중 한쪽에만 계산됩니다.'}],buttons:[
@@ -422,7 +477,7 @@ class TableScene extends Phaser.Scene {
       const base=s.baseScore(0), n=s.goCount[0], pv=s.previewSettlement(0);
       const mult=[...(pv.baks.length?[`${pv.baks.join('·')} ${pv.multiplier}배`]:[]),...(pv.declared.length?[`선언(${declText(pv.declared)}) ${pv.declMultiplier}배`]:[])];
       const bak=mult.length?`  ×  ${mult.join(' × ')}  =  ${pv.final}점`:'';
-      drawModal(ui,{title:'고 또는 스톱?',lines:[
+      drawModal(ui,{title:'고 또는 스톱?',titleRight:this.timerKind==='gostop'&&this.timerSec!==undefined?{text:`${this.timerSec}초`,color:this.timerSec<=3?'#e03a3a':COLORS.text,size:24}:undefined,lines:[
         ...(this.tauntNow&&!this.taunt.calmed?[{text:'(도발)',size:13,color:COLORS.orange,bold:true}]:[]),
         {text:`기본 점수 ${base}점  ·  현재 ${n}고  ·  지금 스톱하면 ${pv.goPoints}점${bak}`,color:COLORS.text},
         {text:'고를 외치면 기본 점수가 지금보다 올라야 다시 선택할 수 있습니다.',size:15},
@@ -436,7 +491,7 @@ class TableScene extends Phaser.Scene {
       const r=s.result;
       const lines=this.resultLines(r);
       const shown=lines.slice(0,this.resultShown);
-      const title=r.outcome!=='승리'?'나가리':r.forfeit?(r.winner===0?'상대 들통':'들통'):r.winner===0?'승리':'패배';
+      const title=r.outcome!=='승리'?'나가리':r.endKind==='fold'?'접음':r.endKind==='caught'?'잡았다!':r.forfeit?'들통':r.winner===0?'승리':'패배';
       drawModal(ui,{title,titleColor:r.outcome==='승리'?(r.winner===0?COLORS.gold:COLORS.danger):COLORS.muted,alpha:.82,onTap:()=>this.revealResult(),minBodyH:lines.length*36+70,lines:[
         ...shown,
         ...(this.resultShown>=lines.length?[{text:`기본 점수  나 ${myBase}점  /  ${this.names[1]} ${theirBase}점  ·  ${this.message}`,size:14}]:[]),
@@ -496,7 +551,7 @@ class TableScene extends Phaser.Scene {
     if(r.outcome!=='승리')return [{text:`“${this.resultLine}”`,size:17,color:COLORS.gold},{text:'나가리. 양쪽 행동이 모두 소진될 때까지 아무도 스톱하지 않았습니다. 승자 없음, 박·정산 없음, 다음 판 이월 없음(미션 무효).',size:17,color:COLORS.text}];
     const mult=this.missionMult();
     return [{text:`“${this.resultLine}”`,size:17,color:COLORS.gold},
-      {text:r.forfeit?`들통: ${r.winner===0?this.names[1]:'내'} 손이 잡혀 즉시 패배. 승자 기본 점수 ${r.base}점(박·선언 배수 없음)`:`기본 점수 ${r.base}점`,size:19,color:COLORS.text},
+      {text:r.endKind==='fold'?`접음: ${this.names[1]} 기본 점수 ${r.base}점 그대로(고·박·배수 없음)`:r.endKind==='caught'?`잡았다: ${this.names[1]}의 속임수를 잡아 판 몰수. 기준 점수 ${r.base}점(최소 7)`:r.forfeit?`들통: 내 손이 잡혀 즉시 패배. 승자 기본 점수 ${r.base}점(최소 7, 박·선언 배수 없음)`:`기본 점수 ${r.base}점`,size:19,color:COLORS.text},
       {text:r.goCount===0?'고 없음':r.goCount<=2?`${r.goCount}고  +${r.goCount}점 → ${r.settled}점`:`${r.goCount}고 → ${r.settled}점`,size:19,color:COLORS.text},
       {text:r.baks.length?`박: ${r.baks.map(b=>`${b} ×2`).join(' · ')}`:'박 없음',size:19,color:r.baks.length?COLORS.danger:COLORS.muted},
       {text:r.declared.length?`선언 배수: ${declText(r.declared)} ×${r.declMultiplier}`:'선언 배수 없음',size:19,color:r.declared.length?COLORS.danger:COLORS.muted},
@@ -514,6 +569,11 @@ class TableScene extends Phaser.Scene {
   resultButtons(won:boolean):ModalButton[]{
     if(this.launch.scenario)return [{text:'새 판 시작',onTap:()=>this.restart(this.launch.scenario)},{text:'지도로',onTap:()=>this.toJourney()}];
     if(this.launch.errand&&won)return [{text:'계속',onTap:()=>this.finishErrand()}];
+    if(this.launch.lesson&&won)return [{text:'계속',onTap:()=>this.finishLesson()}];
+    const r=this.state.result, folded=r?.outcome==='승리'&&r.endKind==='fold';
+    if(this.chapter?.id==='ch8'&&!this.launch.practice&&won)return [{text:'받아들인다',onTap:()=>this.chooseCh8(true)},{text:'자료만 받는다',onTap:()=>this.chooseCh8(false)}];
+    // 9장은 접어도 완료(접기를 배우는 판)
+    if(this.chapter?.id==='ch9'&&!this.launch.practice&&(won||folded))return [{text:'계속',onTap:()=>this.continueChapter()}];
     if(this.chapter&&!this.launch.practice&&won)return [{text:'계속',onTap:()=>this.continueChapter()}];
     return [{text:'한 판 더',onTap:()=>this.again()},{text:'지도로',onTap:()=>this.toJourney()}];
   }
@@ -649,7 +709,7 @@ class TableScene extends Phaser.Scene {
     const gen=this.gen, s=this.state, sk=this.skills.find(x=>x.id==='swap');
     if(!sk||sk.uses<=0||!canSpendFocus(this.focus,this.skillCost('swap'))||s.deck.length===0){this.cancelSwap();return;}
     this.phase='busy';
-    this.focus=spendFocus(this.focus,this.skillCost('swap'));sk.uses-=1;this.consumeCoffee();
+    this.focus=spendFocus(this.focus,this.skillCost('swap'));sk.uses-=1;this.consumeCoffee();this.noteSkillUse('swap');
     const coin=this.coinBoost;if(coin){this.coinBoost=false;if(!this.launch.scenario)saveProgress(setFlag(loadProgress(),FLAGS.coinBoost,false));}
     const ok=this.aiRng()<swapSuccessRate(coin);
     if(ok){
@@ -730,13 +790,62 @@ class TableScene extends Phaser.Scene {
       this.drawTimerRing(left/limit,left<=TIMER_WARN_MS);
       const sec=Math.ceil(left/1000);
       if(left<=TIMER_WARN_MS&&left>0&&sec!==this.timerTick){this.timerTick=sec;this.sfx.play('select');}
+      this.showTimerNumber(kind,Math.max(0,sec),left<=TIMER_WARN_MS);
       if(left<=0)this.onTimerExpire(kind);
     }});
   }
-  stopTurnTimer(){this.timerEvent?.remove(false);this.timerEvent=undefined;this.timerKind=undefined;this.timerGfx?.clear();}
+  /** 잡기 창: 2.5초 안에 [잡는다]/[모른 척한다], 시간 초과는 모른 척. */
+  askCatch(){return new Promise<'catch'|'ignore'>(res=>{
+    this.catchResolve=res;this.phase='catch';this.draw();
+    const gen=this.gen;this.catchTimer=this.time.delayedCall(CATCH_WINDOW_MS,()=>{if(gen!==this.gen)return;this.decideCatch('ignore');});
+  });}
+  decideCatch(d:'catch'|'ignore'){if(this.phase!=='catch')return;this.catchTimer?.remove(false);this.catchTimer=undefined;const r=this.catchResolve;this.catchResolve=undefined;this.phase='busy';this.draw();r?.(d);}
+  /** 잡았다: 상대 들통 → forfeit(1, caught)로 내 승리(기준 점수 max(내 기본, 7)). 붉은 막 대신 금색 막 + "잡았다!". */
+  async caught(){
+    const s=this.state;if(s.over)return;
+    this.stopTurnTimer();this.gen++;const gen=this.gen;
+    this.fx.clear();this.hidden.clear();this.selectable=[];this.choiceResolve=undefined;this.gukjinResolve=undefined;this.gostopResolve=undefined;
+    s.forfeit(1,{kind:'caught'});this.phase='busy';this.message='잡았다!';this.setMood('defeated');this.draw();
+    const veil=this.add.rectangle(0,0,DESIGN.width,DESIGN.height,0xe0b64f,0.28).setOrigin(0).setDepth(900);
+    const c=this.tableCenter();
+    await this.fx.banner('잡았다!',c.x,c.y,this.fxSettings.ms(FX.bust),{style:'gold',size:72});
+    veil.destroy();if(gen!==this.gen)return;
+    this.showResult(`${this.names[1]}의 속임수를 잡았습니다.`);
+  }
+  /** 아버지: 아직 접기를 안 배웠고 아버지 기본 ≥ 5, 내 점수가 낮은 첫 순간 "불리할 땐 접는 거다." + 임시 접기 버튼(이 판만, 비용 0). */
+  checkTeachFold(){
+    if(!this.profile.teachesFold||this.state.over)return;
+    const learned=this.skills.some(x=>x.id==='fold');
+    if(!shouldTeachFold(learned,this.state.baseScore(1),this.state.baseScore(0),this.foldTaught))return;
+    this.foldTaught=true;this.tempFold=true;this.skills.push({id:'fold',uses:1});
+    this.fx.speech(FATHER_TEACH_FOLD,speechZone());
+    this.draw();
+    const idx=this.skills.findIndex(x=>x.id==='fold'), lay=skillBarLayout(REGIONS.skillBar,this.skills.length+(this.taeohAvail?1:0));
+    const rect=lay.buttons[idx];if(rect)void this.fx.highlight([rect],this.fxSettings.ms(600),0xffe08a);
+  }
+  /** 내 차례에 먹은 분류 기록(학습형): 3턴 연속 같은 분류면 태오가 저지를 강화한다. */
+  noteCaptures(plan:TurnPlan){
+    if(!this.profile.learner)return;
+    const opt=this.state.scoreOptions(0);
+    const kinds=Array.from(new Set(plan.captureGroups.flat().map(c=>captureKind(c,opt)))) as CaptureKind[];
+    this.captureHistory.push(kinds);
+    if(!this.learnerBlock&&captureStreak(this.captureHistory)){this.learnerBlock=true;aiLog('학습형','3턴 연속 같은 분류 → 저지 ×1.5');}
+  }
+  stopTurnTimer(){this.timerEvent?.remove(false);this.timerEvent=undefined;this.timerKind=undefined;this.timerGfx?.clear();this.timerText?.setVisible(false);this.timerSec=undefined;}
+  /**
+   * 남은 초 표시: 손패·바닥패 선택 단계는 손패 윗줄 위 가운데 큰 숫자(40, 굵게, 아이보리 → 마지막 3초 빨강 + 1.15배 맥동),
+   * 고/스톱 창은 창 제목 오른쪽 숫자(24, 초가 바뀔 때만 다시 그린다).
+   */
+  showTimerNumber(kind:'hand'|'choice'|'gostop',sec:number,warn:boolean){
+    const changed=sec!==this.timerSec;this.timerSec=sec;
+    if(kind==='gostop'){this.timerText?.setVisible(false);if(changed&&this.phase==='gostop')this.draw();return;}
+    const tx=this.timerText;if(!tx)return;
+    tx.setVisible(true).setText(String(sec)).setColor(warn?'#e03a3a':COLORS.text).setPosition(DESIGN.width/2,REGIONS.hand.y+8);
+    if(changed&&warn&&!this.fxSettings.reduced){tx.setScale(1);this.tweens.add({targets:tx,scale:1.15,duration:140,yoyo:true,ease:'Quad.easeOut'});}
+  }
   drawTimerRing(ratio:number,warn:boolean){
     const g=this.timerGfx, pv=this.myPanel?.portrait;if(!g||!pv)return;
-    g.clear();g.lineStyle(5,warn?0xe03a3a:0xe0b64f,1);
+    g.clear();g.lineStyle(6,warn?0xe03a3a:0xe0b64f,1);
     g.beginPath();g.arc(pv.cx,pv.cy,pv.r+8,-Math.PI/2,-Math.PI/2+Math.PI*2*Math.max(0,Math.min(1,ratio)),false);g.strokePath();
   }
   onTimerExpire(kind:'hand'|'choice'|'gostop'){
@@ -994,6 +1103,7 @@ class TableScene extends Phaser.Scene {
     if(action.kind==='normal'&&action.shakeMonth!==undefined){await this.shake(0,action.shakeMonth,false);if(gen!==this.gen||this.state.over)return;}
     const plan=await this.runTurn(0,action,(cands,card)=>this.askChoice(cands.map(c=>c.id),`${card.month}월: 가져올 바닥패를 선택하세요.`));
     if(!plan||gen!==this.gen)return;
+    this.noteCaptures(plan);this.checkTeachFold();
     // 10) 고/스톱: 카드·피 이동과 점수 갱신이 끝난 최종 상태로 판단
     if(s.over)return;
     if(s.canDecide(0)){
@@ -1032,6 +1142,23 @@ class TableScene extends Phaser.Scene {
       this.fx.speech(markBluff(l,this.revealBluff||this.ignoreBluffThisTurn),speechZone());this.revealBluff=false;
     }
     await sleep(this,this.fxSettings.ms(this.profile.thinkMs));if(gen!==this.gen)return;
+    this.oppTurns+=1;
+    // 아버지: 3번째 차례에 내 실제 손패의 월 하나를 짚는다(이야기 장면이라 이 상대만 비공개 정보 허용)
+    if(this.profile.readsHand&&this.oppTurns===FATHER_READ_TURN){const rd=fatherRead(s.hands[0],this.aiRng,FATHER_READ);if(rd)this.fx.speech(rd.text,speechZone());}
+    // 상대 속임수(뱀눈): 차례 시작에 rng로 정하고, 바닥과 맞지 않는 손패 1장을 더미 윗장과 바꾼다(공개 정보만으로 고름).
+    // 간파로 지켜보는 중이면 실행 직전 잡기 창(2.5초), 아니면 진동 손목시계 경고(판당 1회). 그 뒤 평소대로 행동한다.
+    let cheated=false;
+    if(s.remainingActions(1)>0&&s.deck.length>0&&decideCheat(this.aiRng,this.profile.cheat,this.cheatsUsed)){
+      const card=pickCheatCard(publicView(s,1));
+      if(card){
+        cheated=true;this.cheatsUsed+=1;
+        const react=cheatReaction(true,this.watching,this.hasBuzz,this.buzzUsed);
+        if(react==='catch'){const d=await this.askCatch();if(gen!==this.gen)return;if(d==='catch'){await this.caught();return;}this.message='모른 척했다.';}
+        if(react==='buzz'){this.buzzUsed=true;this.message='손목이 떨린다 — 뭔가 바뀌었다';this.sfx.play('thud');}
+        s.swapHandWithDeck(1,card.id);this.draw();
+      }
+    }
+    if(this.watching){if(!cheated){this.message='지켜봤지만 아무 일도 없었다.';this.draw();}this.watching=false;}
     const aiPick:PickChoice=(cands,card)=>{const d=this.opponent.chooseFloorTarget(publicView(s,1),card,cands);aiLog(`바닥패 선택 ${card.month}월`,d.reason);return Promise.resolve(d.targetId);};
     if(s.remainingActions(1)>0){
       const a=this.opponent.chooseAction(publicView(s,1),this.aiRng,this.aiActions);
@@ -1060,6 +1187,7 @@ class TableScene extends Phaser.Scene {
     if(s.settleIfExhausted()){this.showResult('양쪽 행동이 모두 소진되었습니다.');return;}
     if(s.remainingActions(0)===0){s.turn+=1;await this.runOpponentTurn();return;} // 내 행동이 없으면 상대가 이어서 진행
     this.ignoreBluffThisTurn=false; // 시선 돌리기는 '이번 턴'까지
+    this.checkTeachFold();
     this.phase='hand';this.turnOwner=0;this.message='내 차례입니다. 손패나 기회 패를 누르세요.';this.draw();
     this.startTurnTimer('hand');
   }

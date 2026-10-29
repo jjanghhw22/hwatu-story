@@ -160,14 +160,58 @@ export const CHAPTERS: readonly Chapter[] = [
       ],
     },
   },
-  { id: 'ch7', no: 7, title: '편의점 뒷문', cover: `${STORY_ASSET_DIR}/cover-ch7.png`, place: 'store', unlocks: ['billiards'], opponentId: 'sangcheol', rewardSkill: 'readThrough',
-    scenes: { before: placeholder('수금업자 ‘뱀눈’이 편의점 뒷문으로 온다. (다음 단계)'), after: placeholder('목표가 바뀐다 — 백운레저. (다음 단계)') } },
-  { id: 'ch8', no: 8, title: '돌아온 친구', cover: `${STORY_ASSET_DIR}/cover-ch8.png`, place: 'billiards', unlocks: ['hotel'], opponentId: 'taeoh',
-    scenes: { before: placeholder('태오 재대결. 출입증과 정산 자료. (다음 단계)'), after: placeholder('“호텔에 있어. 그런데 네가 생각하는 모습은 아닐 거야.” (다음 단계)') } },
-  { id: 'ch9', no: 9, title: '흰 방의 아버지', cover: `${STORY_ASSET_DIR}/cover-ch9.png`, place: 'hotel', unlocks: [], opponentId: 'father', rewardSkill: 'fold', focusMaxAfter: 140,
-    scenes: { before: placeholder('창문이 열리지 않는 방. 아버지와의 판. (다음 단계)'), after: placeholder('“한 판 지는 게 무서우면, 결국 다 잃을 때까지 앉아 있게 된다.” (다음 단계)') } },
+  {
+    id: 'ch7', no: 7, title: '편의점 뒷문', cover: `${STORY_ASSET_DIR}/cover-ch7.png`, place: 'store', unlocks: ['billiards'], opponentId: 'sangcheol',
+    scenes: {
+      before: [
+        cut('ch7-papers.png', '서린의 빚 서류. 같은 금액, 날짜마다 바뀌는 채권자.'),
+        cut('ch7-trace.png', '영수증·통화 기록·납부 내역, 그리고 판에서 가져온 단서. 하나의 이름으로 모인다 — 백운레저.'),
+        line('seorin', '네가 돈을 아무리 따도 저쪽이 장부를 고치면 끝이잖아.'),
+        cut('ch7-goal.png', '목표가 바뀐다. 아버지, 빚의 원본 기록, 백무진이 자기 편에게도 숨긴 돈의 흐름.'),
+      ],
+      after: [
+        cut('ch7-backdoor.png', '편의점 뒷문. 뱀눈이 서류 봉투를 내려놓는다.'),
+        line('seorin', '오늘은 돈 안 가져와도 돼. 잠깐 앉아 있다 가.'),
+      ],
+    },
+  },
+  {
+    id: 'ch8', no: 8, title: '돌아온 친구', cover: `${STORY_ASSET_DIR}/cover-ch8.png`, place: 'billiards', unlocks: ['hotel'], opponentId: 'taeoh',
+    scenes: {
+      before: [
+        cut('ch8-billiards.png', '당구장. 태오가 큐대를 내려놓는다.'),
+        line('taeoh', '때릴 거면 왼쪽은 피해. 거긴 이미 맞았어.'),
+        cut('ch8-debt.png', '태오는 백무진에게 아버지 빚이 잡혀 있었다.'),
+        line('player', '넌 친구도 팔고 돈도 못 받았네.'),
+        line('taeoh', '그러게. 장사를 참 못해.'),
+        cut('ch8-stake.png', '돈 대신 출입증과 정산 자료를 건 한 판.'),
+      ],
+      after: [
+        line('player', '아버지는 살아 있어?'),
+        line('taeoh', '호텔에 있어. 그런데 네가 생각하는 모습은 아닐 거야.'),
+      ],
+    },
+  },
+  {
+    id: 'ch9', no: 9, title: '흰 방의 아버지', cover: `${STORY_ASSET_DIR}/cover-ch9.png`, place: 'hotel', unlocks: [], opponentId: 'father', rewardSkill: 'fold', focusMaxAfter: 140,
+    setFlags: ['ch9.files'],
+    scenes: {
+      before: [
+        cut('ch9-room.png', '창문이 열리지 않는 방. 아버지는 백무진의 옛 거래 기록을 정리하고 있다.'),
+        line('father', '누가 여기 오랬어?'),
+        line('player', '아버지는 맨날 오지 말래. 묻지 말래. 기다리래. 그럼 나는 뭘 알아야 하는데?'),
+        line('father', '내가 남들 돈 잃게 만든 건 맞다.'),
+        line('player', '그럼 왜 나한테는 한 번도 말 안 했어요?'),
+        line('father', '네가 나를 좋아했으니까.'),
+      ],
+      after: [
+        line('father', '한 판 지는 게 무서우면, 결국 다 잃을 때까지 앉아 있게 된다.'),
+        cut('ch9-files.png', '자료 일부를 받았다. 마지막 기록은 백무진 개인 금고. 초대전을 통과해야 한다.'),
+      ],
+    },
+  },
   { id: 'ch10', no: 10, title: '왕의 식탁', cover: `${STORY_ASSET_DIR}/cover-ch10.png`, place: 'hotel', unlocks: [], opponentId: 'jeongho',
-    scenes: { before: placeholder('세 문지기 3연전: 민정호·차유라·구상만. (다음 단계)'), after: placeholder('백무진 등장. 왕좌 제안. (다음 단계)') } },
+    scenes: { before: placeholder('초대전 — 다음 이야기는 아직 준비 중'), after: placeholder('백무진 등장. 왕좌 제안. (다음 단계)') } },
   { id: 'ch11', no: 11, title: '왕이 없는 밤', cover: `${STORY_ASSET_DIR}/cover-ch11.png`, place: 'hotel', unlocks: [], opponentId: 'mujin',
     scenes: { before: placeholder('백무진. 3단계 한 판. (다음 단계)'), after: placeholder('“한 번 더.” 고 / 스톱. (다음 단계)') } },
   { id: 'epilogue', no: 12, title: '머리 자르는 날', cover: `${STORY_ASSET_DIR}/cover-epilogue.png`, place: 'barber', unlocks: [],
@@ -176,12 +220,27 @@ export const CHAPTERS: readonly Chapter[] = [
 
 export const CHAPTER_IDS = CHAPTERS.map(c => c.id);
 /** 이야기·대결이 실제로 구현된 장. 그 뒤 장의 무대는 지도에서 잠긴 채 보인다(보정: 다음 목적지 ▶는 집에). */
-export const IMPLEMENTED_CHAPTERS: readonly ChapterId[] = ['prologue', 'ch1', 'ch2', 'ch3', 'ch4', 'ch5', 'ch6'];
+export const IMPLEMENTED_CHAPTERS: readonly ChapterId[] = ['prologue', 'ch1', 'ch2', 'ch3', 'ch4', 'ch5', 'ch6', 'ch7', 'ch8', 'ch9'];
 /** 6장 그날 밤 집 장면(비닐봉지): 휴식 직전 1회. */
 export const NIGHT_CH6_SCENES: Scene[] = [
   cut('ch6-bag.png', '문 앞 비닐봉지. 삼각김밥 둘, 생수.'),
   line('seorin', '먹고 화내. 굶으면 판단부터 이상해져.'),
 ];
+/** 7장: 승리 방법별 한 줄(잡기로 이기면 원본, 그냥 이기면 사본). */
+export const CH7_ORIGINAL: Scene[] = [line('seorin', '원본이야.')];
+export const CH7_COPY: Scene[] = [line('seorin', '사본뿐이네. 그래도 이름은 다 있어.')];
+/** 8장: 승리 뒤 선택별 한두 줄. */
+export const CH8_ACCEPT: Scene[] = [line('player', '받아들일게.'), line('taeoh', '…고맙다. 한 판에 한 번은 내가 칠게.')];
+export const CH8_DECLINE: Scene[] = [line('player', '자료만 줘.'), line('taeoh', '그래. 그게 맞겠지.')];
+/** 9장: 접었을 때(아버지가 처음으로 고개를 끄덕인다) / 이겼을 때. */
+export const CH9_FOLD: Scene[] = [cut('ch9-nod.png', '아버지가 처음으로 고개를 끄덕인다.')];
+export const CH9_WIN: Scene[] = [line('father', '…이겼네. 그럼 됐다.')];
+/** 7장 첫 편의점 방문 앞에 1회: 서린 사건 '수상한 방문객'. */
+export const CH7_VISITOR: Scene[] = [cut('ch7-visitor.png', '계산대 너머로 같은 남자가 또 기웃거린다.'), line('seorin', '저 사람 또 왔어.')];
+/** 7장 간파 배우기: 서린이 배송 기사를 소개한다. */
+export const CH7_COURIER: Scene[] = [line('seorin', '박 기사님, 이 사람 좀 봐 줘요. 손 빠른 사람 잡는 법.'), line('courier', '한 판 치면서 보여 주지. 눈은 손이 아니라 더미를 봐.')];
+/** 9장 뒤 첫 편의점 방문: 서린 사건 '오래된 선물'. */
+export const GIFT_SCENES: Scene[] = [line('seorin', '이거, 네 아버지가 맡긴 건가 봐.'), cut('gift-watch.png', '낡은 회중시계. 뚜껑 안쪽에 작은 글씨.')];
 /** 5장 편의점 앞 컵라면 셋(5장 진행 중 편의점 첫 방문 때 1회). */
 export const CH5_RAMEN_SCENES: Scene[] = [
   cut('ch5-ramen.png', '편의점 앞 컵라면 셋.'),
@@ -205,3 +264,12 @@ export function placeOpensLabel(opensAt: 'start' | ChapterId): string | null {
   const c = chapterById(opensAt);
   return c.id === 'prologue' ? '프롤로그에서 열림' : c.id === 'epilogue' ? '에필로그에서 열림' : `${c.no}장에서 열림`;
 }
+
+/** 장 승리 방식별 after 앞 장면과 플래그: 7장(잡기로 이기면 원본, 아니면 사본), 9장(접으면 끄덕임, 이기면 다른 한 줄). 9장은 접기·승리 모두 완료. */
+export function chapterWinVariant(id: ChapterId, how: { caught?: boolean; folded?: boolean }): { prefix: Scene[]; flags: string[] } {
+  if (id === 'ch7') return how.caught ? { prefix: CH7_ORIGINAL, flags: ['ch7.original'] } : { prefix: CH7_COPY, flags: ['ch7.copy'] };
+  if (id === 'ch9') return how.folded ? { prefix: CH9_FOLD, flags: ['ch9.folded'] } : { prefix: CH9_WIN, flags: ['ch9.won'] };
+  return { prefix: [], flags: [] };
+}
+/** 8장 선택: 받아들이면 9장부터 태오 버튼이 다시 생긴다. */
+export function ch8Choice(accept: boolean): { prefix: Scene[]; flags: string[] } { return accept ? { prefix: CH8_ACCEPT, flags: ['taeoh.accepted'] } : { prefix: CH8_DECLINE, flags: ['taeoh.declined'] }; }

@@ -26,7 +26,9 @@ export const AFFINITY = { visit: 1, talk: 1, talkBig: 2, promise: 3 } as const;
 export const SATURDAY = { pending: 'serin.saturdayPending', done: 'serin.saturdayDone', needAffinity: 5 } as const;
 export const RAIN = { needAffinity: 8 } as const;
 
-export type SerinEventId = 'meal' | 'textbook' | 'stock' | 'parcel' | 'exam' | 'saturday' | 'saturdayVisit' | 'rain' | 'visitor' | 'gift';
+export type SerinEventId = 'meal' | 'textbook' | 'stock' | 'parcel' | 'exam' | 'saturday' | 'saturdayVisit' | 'rain' | 'visitor' | 'gift' | 'sitDown';
+/** '앉아 있다 가'(7장 이후, 방문 6회 이상, 1회). */
+export const SIT_DOWN = { needVisits: 6, done: 'serin.sitDone' } as const;
 export type SerinEvent = {
   id: SerinEventId;
   title: string;
@@ -70,8 +72,11 @@ export const SERIN_EVENTS: readonly SerinEvent[] = [
     condition: p => p.serin.affinity >= RAIN.needAffinity && chapterOrder(p.chapterId, 'ch4') > 0 && !p.flags['serin.rainDone'],
     choice: { accept: '같이 쓴다', decline: '먼저 가라고 한다', cost: 0, acceptAffinity: AFFINITY.promise, declineAffinity: AFFINITY.talk },
     scenes: [cut('비 오는 날. 퇴근하는 서린의 손에 우산 하나.'), line('우산 하나인데 어떻게 할래?')] },
-  { id: 'visitor', title: '수상한 방문객', quote: '저 사람 또 왔어.', outcome: '뱀눈 단서(7장 전조)', implemented: false, repeatable: false, kind: 'daily', scenes: [line('저 사람 또 왔어.')] },
-  { id: 'gift', title: '오래된 선물', quote: '이거, 네 아버지가 맡긴 건가 봐.', outcome: '회중시계 사건', implemented: false, repeatable: false, kind: 'daily', scenes: [line('이거, 네 아버지가 맡긴 건가 봐.')] },
+  { id: 'visitor', title: '수상한 방문객', quote: '저 사람 또 왔어.', outcome: '뱀눈 단서(7장 전조) — 7장 첫 편의점 방문 장면 앞에 1회', implemented: true, repeatable: false, kind: 'followup', scenes: [line('저 사람 또 왔어.')] },
+  { id: 'gift', title: '오래된 선물', quote: '이거, 네 아버지가 맡긴 건가 봐.', outcome: '낡은 회중시계(장비) — 9장 완료 뒤 첫 편의점 방문에 1회', implemented: true, repeatable: false, kind: 'followup', scenes: [line('이거, 네 아버지가 맡긴 건가 봐.')] },
+  { id: 'sitDown', title: '앉아 있다 가', quote: '오늘은 돈 안 가져와도 돼.', outcome: '관계(호감 +3), 우유', implemented: true, repeatable: false, kind: 'daily',
+    condition: p => p.serin.visits >= SIT_DOWN.needVisits && chapterOrder(p.chapterId, 'ch7') >= 0 && !p.flags[SIT_DOWN.done],
+    scenes: [line('오늘은 돈 안 가져와도 돼. 잠깐 앉아 있다 가.'), { kind: 'line', speaker: 'player', text: '넌 내가 돈 못 따도 이렇게 잘해 주냐?' }, line('네가 돈 따기 전부터 내가 말 걸었거든?'), line('이건 계산하고.')] },
 ];
 export function serinEventById(id: SerinEventId): SerinEvent { return SERIN_EVENTS.find(e => e.id === id)!; }
 
@@ -170,6 +175,14 @@ export function applyEvent(p: Progress, id: SerinEventId, choice: EventChoice = 
     const together = choice === 'accept';
     const q = bumpAff(setFlag(p, 'serin.rainDone'), together ? ev.acceptAffinity : ev.declineAffinity);
     return none(q, [together ? '우산 하나를 같이 썼다. (호감 +3)' : '먼저 가라고 했다. 서린은 잠깐 서 있다 갔다. (호감 +1)', '어머니 병원비 얘기를 처음 꺼냈다. 백운레저에 빚이 있다고 했다.']);
+  }
+  if (id === 'sitDown') {
+    if (p.flags[SIT_DOWN.done]) return none(p, ['이미 들었던 말이다.']);
+    return none(addToBag(bumpAff(setFlag(p, SIT_DOWN.done), AFFINITY.promise), 'milk'), ['우유 하나를 받았다. (호감 +3)']);
+  }
+  if (id === 'gift') {
+    if (p.flags[FLAGS.serinWatch]) return none(p, ['이미 받은 물건이다.']);
+    return none(addToBag(setFlag(p, FLAGS.serinWatch), 'pocketWatch'), ['낡은 회중시계를 받았다. 집 [기술·장비]에서 장착하면 대결 중 정직 기술 하나를 한 번 더 쓸 수 있다.']);
   }
   return none(p, ['(다음 단계에서 이어진다)']);
 }

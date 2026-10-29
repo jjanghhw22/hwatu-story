@@ -8,9 +8,11 @@ export const GO_STOP_THRESHOLD = 7;
 export const BOMB_FLIP_CHANCES = 2;
 /** 합의 종료(들통)의 최소 기준 점수: 승자 기본 점수가 이보다 낮으면 이 값으로 정산한다. */
 export const FORFEIT_MIN_BASE = 7;
+/** 합의 종료 종류: 들통(내 속임수가 잡힘)·잡기(상대 속임수를 잡음)·접기(불리한 판을 스스로 끝냄). */
+export type ForfeitKind = 'bust' | 'caught' | 'fold';
 /** 판 결과. 스톱한 쪽이 즉시 승자. 양쪽 행동이 모두 소진될 때까지 승자가 없으면 나가리(박·정산 없음, 배수 이월 없음). */
 export type RoundResult =
-  | { outcome: '승리'; winner: number; base: number; goCount: number; settled: number; baks: BakKind[]; multiplier: number; declared: Declared[]; declMultiplier: number; final: number; /** 합의 종료(들통·접기)로 끝난 판: 박·선언 배수 없이 승자 기본 점수의 고 공식만 적용. */ forfeit?: boolean }
+  | { outcome: '승리'; winner: number; base: number; goCount: number; settled: number; baks: BakKind[]; multiplier: number; declared: Declared[]; declMultiplier: number; final: number; /** 합의 종료(들통·잡기·접기)로 끝난 판: 박·선언 배수 없음. */ forfeit?: boolean; /** 합의 종료의 종류. */ endKind?: ForfeitKind }
   | { outcome: '나가리' };
 export function newDeck(random: () => number = Math.random): Card[] {
   const cards = [...CARDS];
@@ -340,11 +342,14 @@ export class GameState {
    * 합의 종료(들통·접기): 규칙 변경이 아니라 종료 사유 추가. loser가 즉시 지고 승자는 자기 기본 점수에 고 공식(settlementPoints)만 적용한 점수를 받는다(박·선언 배수 없음).
    * 이미 끝난 판에서는 거부한다. 결과에 forfeit 표시가 남는다.
    */
-  forfeit(loser:0|1):RoundResult{
+  forfeit(loser:0|1,opts:{minBase?:number;kind?:ForfeitKind}={}):RoundResult{
     if(this.over)throw new Error('이미 끝난 판입니다.');
-    // 최소 벌점: 승자 기본 점수가 낮아도 "상대가 7점으로 스톱한 것"과 같게(요청 08 A-3)
-    const winner=1-loser, base=Math.max(this.baseScore(winner),FORFEIT_MIN_BASE), goCount=this.goCount[winner], settled=settlementPoints(base,goCount);
-    this.result={outcome:'승리',winner,base,goCount,settled,baks:[],multiplier:1,declared:[],declMultiplier:1,final:settled,forfeit:true};
+    const kind=opts.kind??'bust';
+    // 들통·잡기: 최소 기준 점수 7("상대가 7점으로 스톱한 것"과 같게), 고 공식 적용. 접기: 승자 기본 점수 그대로(최소 없음, 고 공식 미적용)
+    const minBase=opts.minBase??(kind==='fold'?0:FORFEIT_MIN_BASE);
+    const winner=1-loser, base=Math.max(this.baseScore(winner),minBase), goCount=this.goCount[winner];
+    const settled=kind==='fold'?base:settlementPoints(base,goCount);
+    this.result={outcome:'승리',winner,base,goCount,settled,baks:[],multiplier:1,declared:[],declMultiplier:1,final:settled,forfeit:true,endKind:kind};
     this.version+=1;
     return this.result;
   }

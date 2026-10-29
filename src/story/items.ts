@@ -1,7 +1,7 @@
 // 편의점 아이템 데이터(바이블 7절, 10개). 효과는 설명 글자 + 수치 필드.
 // 동작(F2·F3): 삼각김밥·캔커피·행운의 동전(지도에서 사용), 포도당 사탕(대결 중), 숙면 안대·무표정 마스크·투시경 안경(장비). 진동 손목시계·회중시계·도시락은 데이터만.
 // 상점 해금은 Progress.flags의 플래그로 판정한다(unlockFlag가 null이면 처음부터).
-export type ItemId = 'riceBall' | 'canCoffee' | 'glucoseCandy' | 'warmLunch' | 'sleepMask' | 'xrayGlasses' | 'blankMask' | 'luckyCoin' | 'buzzWatch' | 'pocketWatch' | 'hotPack';
+export type ItemId = 'riceBall' | 'canCoffee' | 'glucoseCandy' | 'warmLunch' | 'sleepMask' | 'xrayGlasses' | 'blankMask' | 'luckyCoin' | 'buzzWatch' | 'pocketWatch' | 'hotPack' | 'milk';
 export type ItemKind = 'consumable' | 'gear';
 
 export type Item = {
@@ -56,10 +56,12 @@ export const ITEMS: readonly Item[] = [
   item('xrayGlasses', 6, '투시경 안경', 'gear', '상대 손패 무작위 1장 공개', '대결당 1회, 의심도 +20', '5장 고물상(서린 희귀 답례 → 상점 뒷방)', FLAGS.serinJunk, 30000, 'gear', { suspicion: 20 }),
   item('blankMask', 7, '무표정 마스크', 'gear', '속임수로 오른 의심도 1회 −30', '들통을 막지는 못함', '3장', 'ch3.done', 8000, 'gear', { suspicion: -30 }),
   item('luckyCoin', 8, '행운의 동전', 'consumable', '다음 확률 기술 성공률 +15%p(최대 90%)', '1회', '태오 이벤트(5장 완료 → 상점)', FLAGS.taeohCoin, 5000, 'map', { successBonus: 15 }),
-  item('buzzWatch', 9, '진동 손목시계', 'gear', '상대 기술 준비 시 1회 경고(종류 비공개)', '—', '7장', 'ch7.done', null, 'gear'),
-  item('pocketWatch', 10, '낡은 회중시계', 'gear', '일반 기술 1개 재사용 대기 초기화', '대결당 1회, 희귀 기술 제외', '9장 사건', FLAGS.serinWatch, null, 'gear'),
+  item('buzzWatch', 9, '진동 손목시계', 'gear', '상대 속임수가 일어나는 순간 1회 경고(잡기 불가)', '대결당 1회', '7장(간파를 배운 뒤 상점)', 'ch7.courier', 12000, 'gear'),
+  item('pocketWatch', 10, '낡은 회중시계', 'gear', '이번 판에 쓴 정직 기술 하나의 남은 횟수 +1', '대결당 1회, 속임수·희귀 기술 제외', '9장 뒤 서린 사건 \'오래된 선물\'', FLAGS.serinWatch, null, 'gear'),
   /** 서린 토요일 약속의 핫팩(목록 밖 소모품, 판매 안 함). */
   item('hotPack', 11, '핫팩', 'consumable', '집중력 +15', '대결 중 불가', '서린 토요일 약속', 'serin.saturdayDone', null, 'map', { focus: 15 }),
+  /** 서린 '앉아 있다 가'의 우유(목록 밖 소모품, 판매 안 함). */
+  item('milk', 12, '우유', 'consumable', '집중력 +10', '대결 중 불가', '서린 앉아 있다 가', 'serin.sitDone', null, 'map', { focus: 10 }),
 ];
 export const ITEM_IDS = ITEMS.map(i => i.id);
 export const isItemId = (v: unknown): v is ItemId => typeof v === 'string' && ITEMS.some(i => i.id === v);

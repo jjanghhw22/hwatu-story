@@ -120,7 +120,7 @@ test('6장 큰 판: 두 판 연속, 돈 변동 없음, 걸릴 뻔 1회, 완료 �
   assert.equal(NEAR_MISS_LINE, '…방금 뭐였지?');
   const done = completeChapter(at('ch6'), chapterById('ch6'));
   assert.ok(isDebtFrozen(done) && isNightLocked(done)); assert.equal(done.flags[DEBT_FROZEN_FLAG], true); assert.equal(done.chapterId, 'ch7');
-  assert.ok(!isChapterImplemented('ch7'));
+  assert.ok(!isChapterImplemented('ch10'));
   const night = rest(addToBag(done, 'riceBall', 2));
   assert.ok(!isNightLocked(night) && isDebtFrozen(night)); assert.equal(night.flags[NIGHT_LOCK_FLAG], false); assert.equal(bagCount(night, 'riceBall'), 2);
   assert.ok(NIGHT_CH6_SCENES.some(s => s.kind === 'line' && s.text === '먹고 화내. 굶으면 판단부터 이상해져.'));

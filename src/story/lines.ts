@@ -38,6 +38,15 @@ export const BOKHEE_BLUFF = {
   optimist: ['이거 하나면 끝이다.', '이제 다 모였어, 한 장만 더.', '이번 판은 내가 가져가겠네.'],
   truthful: ['아직 멀었다, 멀었어.', '이제 좀 모이네.', '거의 다 왔다.'] as [string, string, string],
 } as const;
+/** 뱀눈(7장): 결과 대사. 바이블 "이번 주 안에 넣는다며."는 before 장면에. */
+export const SANGCHEOL_LINES: DialogSet = { ...SILENT_LINES, playerWin: ['…서류는 가져가.'], aiWin: ['이번 주 안에 넣는다며.'], draw: ['다음 주에 또 오지.'] };
+/** 태오(8장, 학습형). 잠길 때 말풍선은 TAEOH_READ. */
+export const TAEOH_LINES: DialogSet = { ...SILENT_LINES, playerWin: ['그러게. 장사를 참 못해.'], aiWin: ['습관은 안 바뀌네.'], draw: ['한 판 더 해.'] };
+export const TAEOH_READ = '그거 또 쓸 줄 알았어.';
+/** 아버지(9장). 손패 읽기 템플릿({m} = 내 실제 손패의 월). 첫 줄은 바이블 문장. */
+export const FATHER_LINES: DialogSet = { ...SILENT_LINES, playerGo: ['또 가냐.'], playerWin: ['…이겼네. 그럼 됐다.'], aiWin: ['한 판 지는 게 무서우면, 결국 다 잃을 때까지 앉아 있게 된다.'], draw: ['다시.'] };
+export const FATHER_READ: readonly string[] = ['넌 지금 {m}월 들고 뻑 기다리지.', '{m}월은 아껴 둬 봐야 소용없다.', '그 {m}월, 바닥에 내려놓을 데가 없지?'];
+export const FATHER_TEACH_FOLD = '불리할 땐 접는 거다.';
 /** 6장 큰 판 "걸릴 뻔": 상대가 손을 멈추고 쳐다본다. */
 export const NEAR_MISS_LINE = '…방금 뭐였지?';
 

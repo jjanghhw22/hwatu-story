@@ -26,7 +26,7 @@ export const PROVOKED_MAX_GO = 2;
  * 도발형 래퍼: provoked()가 true면 자기 기본 점수 7점 이상일 때 PROVOKED_MAX_GO까지 고(공격적), 아니면 원래 정책.
  * 규칙 함수(canDecide/canGo)가 허용한 뒤에만 불리므로 규칙은 그대로다.
  */
-export function provokedPolicy(base: Opponent, provoked: () => boolean): Opponent {
+export function provokedPolicy(base: Opponent, provoked: () => boolean, maxGo: number = PROVOKED_MAX_GO): Opponent {
   return {
     ...base,
     key: `${base.key}+도발`,
@@ -34,7 +34,7 @@ export function provokedPolicy(base: Opponent, provoked: () => boolean): Opponen
       if (provoked()) {
         const myRemaining = v.hand.length + v.myFlipChances;
         const myBase = scoreCaptured(v.myCaptured, { gukjinAsPi: v.gukjinAsPi }).total;
-        if (myRemaining > 0 && myBase >= 7 && v.myGo < PROVOKED_MAX_GO) return { decision: 'go', reason: `도발에 응한 상대: 공격적 정책으로 ${v.myGo + 1}고(최대 ${PROVOKED_MAX_GO}고)` };
+        if (myRemaining > 0 && myBase >= 7 && v.myGo < maxGo) return { decision: 'go', reason: `공격적 정책으로 ${v.myGo + 1}고(최대 ${maxGo}고)` };
       }
       return base.decideGoStop(v);
     },

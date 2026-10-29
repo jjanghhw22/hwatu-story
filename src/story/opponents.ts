@@ -4,10 +4,12 @@ import { type Opponent, STRATEGIC } from '../ai.ts';
 import { BEGINNER } from '../beginner.ts';
 import type { CharacterId } from '../character.ts';
 import { BARBER_LINES, type DialogSet } from '../dialog.ts';
-import { BOKHEE_LINES, MA_LINES, MA_TAUNTS, SILENT_LINES } from './lines.ts';
+import { BOKHEE_LINES, FATHER_LINES, MA_LINES, MA_TAUNTS, SANGCHEOL_LINES, SILENT_LINES, TAEOH_LINES } from './lines.ts';
+import type { CheatSpec } from './cheat.ts';
+import { provokedPolicy } from './policies.ts';
 import { EASY } from './policies.ts';
 
-export type OpponentId = 'barber' | 'bamcha' | 'ma' | 'bokhee' | 'bonggu' | 'stranger' | 'merchant' | 'highroller' | 'sangcheol' | 'taeoh' | 'father' | 'jeongho' | 'yura' | 'sangman' | 'mujin';
+export type OpponentId = 'barber' | 'bamcha' | 'ma' | 'bokhee' | 'bonggu' | 'stranger' | 'merchant' | 'courier' | 'highroller' | 'sangcheol' | 'taeoh' | 'father' | 'jeongho' | 'yura' | 'sangman' | 'mujin';
 /** beginner: 초보 정책(항상 스톱). strategic: 전략 정책. easy: 초보·전략 50:50 래퍼(일반 상대). */
 export type OpponentPolicy = 'beginner' | 'strategic' | 'easy';
 /** 성격 키워드(바이블 6절). 동작은 이후 단계. */
@@ -24,6 +26,12 @@ export type OpponentProfile = {
   taunt?: boolean;
   /** 도발 말풍선 목록(lines.ts). */
   taunts?: readonly string[];
+  /** 속임수형(뱀눈·백무진): 상대 차례마다 perTurn 확률로 손패 1장을 더미 윗장과 바꾼다(판당 maxPerMatch회). 간파로 잡을 수 있다. */
+  cheat?: CheatSpec;
+  /** 학습형(태오): 같은 기술 두 번 쓰면 잠그고, 3턴 연속 같은 분류를 먹으면 저지를 강화한다. */
+  learner?: boolean;
+  /** 아버지: 내 실제 손패의 월을 짚는 말풍선(이 상대만 비공개 정보 허용), 접기 가르치기, 7점이면 거의 항상 고(최대 eagerGo고). */
+  readsHand?: boolean; teachesFold?: boolean; eagerGo?: number;
   /** 역정보형: 상대 차례 시작 때 이 확률로 실제 상태의 반대를 말한다(0~1). 없으면 말풍선 없음. */
   bluff?: number;
   /** 속공형: 내 턴 생각 시간 제한(ms). 없으면 제한 없음. */
@@ -53,9 +61,10 @@ export const OPPONENTS: Record<OpponentId, OpponentProfile> = {
   stranger: { id: 'stranger', characterId: 'stranger', policy: 'easy', traits: ['중상'], sharpness: 0.8, thinkMs: 400, lines: SILENT_LINES, note: '일반 상대(목욕탕 등). 초보·전략 50:50 래퍼로 쉬운 상대. 소지금은 내 소지금의 1.5배' },
   highroller: strategic('highroller', 'stranger', ['중상'], 2.0, '6장 익명의 고액 판 상대(중상). 판이 크고 눈이 많아 의심도가 두 배로 오른다', { money: 120000000 }),
   merchant: { id: 'merchant', characterId: 'merchant', policy: 'easy', traits: ['초보'], sharpness: 0, thinkMs: 400, lines: SILENT_LINES, note: '4장 심부름 상대(건어물 상인). 연습 한 판, 판돈 0' },
-  sangcheol: strategic('sangcheol', 'sangcheol', ['속임수'], 1.2, '7장. 속임수형. 의심도 시스템 본격 등장', { money: 12000000 }),
-  taeoh: strategic('taeoh', 'taeoh', ['학습'], 1.3, '8장. 도윤의 기술을 알고 견제(학습형)', { money: 2000000 }),
-  father: strategic('father', 'father', ['조급유도'], 0, '9장. 도윤의 조급함을 끌어내는 판'),
+  courier: { id: 'courier', characterId: 'courier', policy: 'easy', traits: ['초보'], sharpness: 0, thinkMs: 400, lines: SILENT_LINES, note: '7장 간파를 가르치는 배송 기사(연습 한 판)' },
+  sangcheol: strategic('sangcheol', 'sangcheol', ['속임수'], 1.2, '7장. 속임수형(차례마다 35%, 판당 3회). 간파로 잡으면 판 몰수', { money: 12000000, cheat: { perTurn: 0.35, maxPerMatch: 3 }, lines: SANGCHEOL_LINES }),
+  taeoh: strategic('taeoh', 'taeoh', ['학습'], 1.3, '8장. 학습형: 같은 기술 두 번이면 잠금, 연속 같은 분류는 저지 강화', { money: 2000000, learner: true, lines: TAEOH_LINES }),
+  father: strategic('father', 'father', ['조급유도'], 0, '9장. 7점이면 거의 항상 고(최대 3고), 손패 읽기, 접기를 가르친다', { readsHand: true, teachesFold: true, eagerGo: 3, lines: FATHER_LINES }),
   jeongho: strategic('jeongho', 'jeongho', ['보수'], 1.5, '10장. 보수형. 7점에 무조건 스톱, 피박 회피 최우선', { money: 50000000 }),
   yura: strategic('yura', 'yura', ['역정보'], 1.5, '10장. 역정보 강화형 + 흔들기 블러핑', { money: 50000000 }),
   sangman: strategic('sangman', 'sangman', ['봉쇄'], 1.5, '10장. 봉쇄형(대결당 3회)', { money: 50000000 }),
@@ -65,4 +74,8 @@ export const OPPONENT_IDS = Object.keys(OPPONENTS) as OpponentId[];
 export const isOpponentId = (v: unknown): v is OpponentId => typeof v === 'string' && v in OPPONENTS;
 
 /** 프로필 → 판단 정책 객체. 규칙·판단 로직은 기존 모듈 그대로. 도발 래퍼는 화면이 판 상태(provoked)를 넘겨 씌운다. */
-export function resolveOpponent(p: OpponentProfile): Opponent { return p.policy === 'beginner' ? BEGINNER : p.policy === 'easy' ? EASY : STRATEGIC; }
+export function resolveOpponent(p: OpponentProfile): Opponent {
+  const base = p.policy === 'beginner' ? BEGINNER : p.policy === 'easy' ? EASY : STRATEGIC;
+  // 조급 유도(아버지): 7점이면 거의 항상 고, 최대 eagerGo고
+  return p.eagerGo ? provokedPolicy(base, () => true, p.eagerGo) : base;
+}

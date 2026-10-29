@@ -14,6 +14,10 @@ export type Modal = {
   onTap?: () => void;
   /** 글자 줄 영역의 최소 높이. 결과창처럼 줄이 차례로 늘어날 때 창 크기가 흔들리지 않게 한다. */
   minBodyH?: number;
+  /** 창 테두리 강조 색(잡기 창의 붉은 테두리). */
+  edgeColor?: number;
+  /** 제목 오른쪽 작은 글자(고/스톱 창의 남은 초). */
+  titleRight?: { text: string; color?: string; size?: number };
 };
 
 const PAD = 28, W = 640, BTN_H = 56, BTN_GAP = 12, CARD_H = 150;
@@ -41,6 +45,8 @@ export function drawModal(ui: UI, m: Modal) {
   label(ui, x + PAD, y + PAD, m.title, 28, m.titleColor ?? COLORS.text, textW, [0, 0], true);
   box(ui, x + PAD, y + PAD + headH - 8, textW, 1, COLORS.brassDim); // 제목 아래 황동 선(카드가 있으면 카드 왼쪽까지)
   if (m.card !== undefined) drawCardFace(ui, { x: x + W - PAD - cardW, y: y + PAD, w: cardW, h: CARD_H }, cardById(m.card));
+  else if (m.titleRight) label(ui, x + W - PAD, y + PAD + 4, m.titleRight.text, m.titleRight.size ?? 24, m.titleRight.color ?? COLORS.text, 120, [1, 0], true);
+  if (m.edgeColor !== undefined) box(ui, x - 2, y - 2, W + 4, h + 4, 0x000000, 0, m.edgeColor, 4);
   let cy = y + PAD + headH;
   for (const l of m.lines) { label(ui, x + PAD, cy, l.text, l.size ?? 17, l.color ?? COLORS.muted, textW, [0, 0], l.bold); cy += lineH(l); }
   cy = y + PAD + headH + bodyH + 10;

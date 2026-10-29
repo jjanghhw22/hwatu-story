@@ -33,3 +33,9 @@ export function assistAction(state: GameState, rng: Rng): AutoAction | null {
   const base = actionForTap(state, 0, index);
   return base.kind === 'normal' ? { ...base, target: a.targetId } : base;
 }
+
+/** 태오 도움 버튼: 5장 동안, 또는 8장에서 받아들인 뒤 9장부터. */
+export function taeohAvailable(chapterId: string, flags: Record<string, boolean>): boolean {
+  const order = ['prologue', 'ch1', 'ch2', 'ch3', 'ch4', 'ch5', 'ch6', 'ch7', 'ch8', 'ch9', 'ch10', 'ch11', 'epilogue'];
+  return chapterId === 'ch5' || (flags['taeoh.accepted'] === true && order.indexOf(chapterId) >= order.indexOf('ch9'));
+}

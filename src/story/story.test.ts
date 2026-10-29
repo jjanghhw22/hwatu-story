@@ -72,7 +72,8 @@ test('인물·상대: 이름은 바이블대로, 상대 프로필의 인물·정
     assert.ok(o.characterId in CHARACTERS, id);
     assert.ok(o.thinkMs > 0);
     const policy = resolveOpponent(o);
-    assert.equal(policy.key, o.policy === 'beginner' ? 'beginner' : o.policy === 'easy' ? 'easy' : 'strategic');
+    assert.ok(policy.key.startsWith(o.policy === 'beginner' ? 'beginner' : o.policy === 'easy' ? 'easy' : 'strategic'));
+    if (o.eagerGo) assert.ok(policy.key.includes('도발'), '조급 유도 래퍼');
   }
   assert.equal(OPPONENTS.barber.policy, 'beginner');
   assert.equal(OPPONENTS.bonggu.turnLimitMs, 8000);
@@ -84,7 +85,7 @@ test('기술 8개·아이템 10개: id 유일, 수치는 바이블대로', () =>
   assert.deepEqual([SKILLS.swap.cost, SKILLS.swap.suspicion, SKILLS.swap.kind], [35, 25, 'cheat']);
   assert.ok(SKILLS.handSwap.rare && SKILLS.memory.rare);
   for (const id of SKILL_IDS) assert.ok(SKILLS[id].kind === 'cheat' ? SKILLS[id].suspicion > 0 : SKILLS[id].suspicion === 0, id);
-  unique(ITEM_IDS); assert.equal(ITEMS.length, 11, '바이블 10개 + 핫팩');
+  unique(ITEM_IDS); assert.equal(ITEMS.length, 12, '바이블 10개 + 핫팩·우유');
   ITEMS.forEach((it, i) => assert.equal(it.no, i + 1));
   assert.equal(ITEMS.find(i => i.id === 'riceBall')?.focus, 20);
   assert.equal(ITEMS.find(i => i.id === 'luckyCoin')?.successBonus, 15);

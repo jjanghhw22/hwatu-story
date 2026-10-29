@@ -27,7 +27,7 @@ test('상점 해금: 처음엔 삼각김밥만, 2장 대화 뒤 캔커피, 재�
   assert.equal(rest(p).flags[FLAGS.homeFirstRest], true);
   for (const it of ITEMS) if (it.price === null) assert.ok(!shopItems({ ...f2, 'ch4.done': true, 'ch3.done': true }).some(x => x.id === it.id), it.id);
   assert.ok(isItemUnlocked(ITEMS[0], {}));
-  assert.deepEqual(ITEMS.filter(i => i.price !== null).map(i => [i.id, i.price]), [['riceBall', 1500], ['canCoffee', 2500], ['glucoseCandy', 1200], ['warmLunch', 6000], ['sleepMask', 15000], ['xrayGlasses', 30000], ['blankMask', 8000], ['luckyCoin', 5000]]);
+  assert.deepEqual(ITEMS.filter(i => i.price !== null).map(i => [i.id, i.price]), [['riceBall', 1500], ['canCoffee', 2500], ['glucoseCandy', 1200], ['warmLunch', 6000], ['sleepMask', 15000], ['xrayGlasses', 30000], ['blankMask', 8000], ['luckyCoin', 5000], ['buzzWatch', 12000]]);
 });
 
 test('가방 증감과 구매: 돈이 모자라면 못 사고, 0개가 되면 키가 사라진다', () => {
@@ -97,8 +97,8 @@ test('서린 방문: 호감은 하루 1회 +1, 돈으로는 오르지 않는다.
   assert.deepEqual(eventCandidates(seenAll).map(e => e.id), ['meal']);
   const r3 = visitSerin(seenAll, seededRng(1));
   assert.equal(r3.event?.id, 'meal'); assert.equal(r3.progress.serin.affinity, AFFINITY.visit + 1);
-  assert.equal(SERIN_EVENTS.filter(e => e.implemented).length, 6);
-  assert.equal(SERIN_EVENTS.length, 10);
+  assert.equal(SERIN_EVENTS.filter(e => e.implemented).length, 9);
+  assert.equal(SERIN_EVENTS.length, 11);
 });
 
 test('서린 사건 효과: 식사는 돈 +20,000·집중력 +20, 교재비는 선택(돈 부족이면 못 빌려줌), 재고 정리는 사탕 해금. pity는 희귀 이상에서 0', () => {
@@ -128,7 +128,7 @@ test('2장·3장 완료 조건과 보정: 1장 끝에 편의점이 열리고, 2�
   assert.ok(c2.scenes.after.some(s => s.kind === 'line' && s.text === '마 사장? 목욕탕 뒤에서 하는 사람.'));
   const p2 = completeChapter(p1, c2);
   assert.equal(p2.chapterId, 'ch3'); assert.ok(p2.unlockedPlaces.includes('bath')); assert.deepEqual(p2.skills, ['eye'], '2장은 보상 기술 없음');
-  assert.ok(isPlaceReady('bath') && isPlaceReady('market') && !isPlaceReady('billiards'));
+  assert.ok(isPlaceReady('bath') && isPlaceReady('market'));
   // 3장 입장: 목욕탕 2승 + 3장이 현재
   assert.ok(!canChallengeMa(p2));
   const w2 = bump(bump(p2, COUNTERS.bathWins), COUNTERS.bathWins);

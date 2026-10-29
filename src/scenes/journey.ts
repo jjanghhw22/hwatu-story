@@ -3,7 +3,7 @@
 import Phaser from 'phaser';
 import { seededRng } from '../rng';
 import { SCENARIOS } from '../scenarios';
-import { CH5_RAMEN_SCENES, CHAPTERS, type Chapter, NIGHT_CH6_SCENES, chapterById, chapterLabel, isChapterImplemented, placeOpensLabel } from '../story/chapters';
+import { CH5_RAMEN_SCENES, CH7_COURIER, CH7_VISITOR, CHAPTERS, GIFT_SCENES, type Chapter, NIGHT_CH6_SCENES, chapterById, chapterLabel, isChapterImplemented, placeOpensLabel } from '../story/chapters';
 import { ERRANDS, type ErrandId, canChallengeBokhee, completeErrand, errandById, errandsDone, isErrandDone } from '../story/errands';
 import { FLAGS, type ItemId, itemById, shopItems } from '../story/items';
 import { PLACES, PLACE_IDS, type PlaceId, canSit, isPlaceReady } from '../story/places';
@@ -19,7 +19,7 @@ import { missingAssets } from '../ui/missing';
 import { type ModalButton, type ModalLine, drawModal } from '../ui/modals';
 import { SoundFx } from '../ui/sound';
 import { COLORS, FONT, type UI, box, button, label, panel } from '../ui/widgets';
-import { type JourneyLaunch, SCENE_KEYS, goJourney, playStory, startChapterMatch, startErrandMatch, startNormalMatch, startPractice, startTable } from './flow';
+import { type JourneyLaunch, SCENE_KEYS, goJourney, playStory, startChapterMatch, startErrandMatch, startLessonMatch, startNormalMatch, startPractice, startTable } from './flow';
 
 type Modal = 'none' | 'place' | 'menu' | 'rules' | 'credits' | 'devinfo' | 'scenarios' | 'reward' | 'box' | 'shop' | 'bag' | 'notice' | 'choice' | 'noMoney' | 'gear' | 'errands' | 'errandChoice';
 /** 노드 색: 열린 곳은 어두운 녹색 + 황동, 잠긴 곳은 회색, 오늘 출입 금지(들통)는 붉은 테두리. */
@@ -142,7 +142,7 @@ export class JourneyScene extends Phaser.Scene {
   maybeFirstVisit(id: PlaceId): boolean {
     const p = this.progress;
     const play = (flag: string, label: string, scenes: Parameters<typeof playStory>[2], extra: string[] = []) => {
-      let q = setFlag(p, flag); for (const f of extra) q = setFlag(q, f);
+      let q = setFlag(this.progress, flag); for (const f of extra) q = setFlag(q, f);
       this.progress = q; this.save();
       playStory(this, label, scenes, s => goJourney(s, { openPlace: id }));
       return true;
@@ -150,6 +150,21 @@ export class JourneyScene extends Phaser.Scene {
     if (id === 'store' && !p.flags['ch2.visited']) { const c2 = chapterById('ch2'); return play('ch2.visited', chapterLabel(c2), c2.scenes.before, [FLAGS.ch2Talked]); }
     if (id === 'store' && p.chapterId === 'ch5' && !p.flags['ch5.ramen']) return play('ch5.ramen', chapterLabel(chapterById('ch5')), CH5_RAMEN_SCENES);
     if (id === 'harbor' && p.chapterId === 'ch5' && !p.flags['ch5.visited']) { const c5 = chapterById('ch5'); return play('ch5.visited', chapterLabel(c5), c5.scenes.before); }
+    // 7장 시작(6장 다음 날 편의점 첫 방문): 서린 사건 '수상한 방문객' → 7장 before(빚 서류·백운레저) → 박 기사 소개
+    if (id === 'store' && p.chapterId === 'ch7' && !p.flags['ch7.visited']) {
+      const c7 = chapterById('ch7');
+      this.progress = { ...p, serin: { ...p.serin, seen: p.serin.seen.includes('visitor') ? p.serin.seen : [...p.serin.seen, 'visitor'] } };
+      return play('ch7.visited', chapterLabel(c7), [...CH7_VISITOR, ...c7.scenes.before, ...CH7_COURIER]);
+    }
+    // 9장 완료 뒤 첫 편의점 방문: 서린 사건 '오래된 선물'(낡은 회중시계)
+    if (id === 'store' && isChapterDone(p, 'ch9') && !p.flags[FLAGS.serinWatch] && !p.flags['gift.played']) {
+      this.progress = setFlag(p, 'gift.played'); this.save();
+      playStory(this, '편의점 · 오래된 선물', GIFT_SCENES, s => {
+        const a = applyEvent(loadProgress(), 'gift'); saveProgress(a.progress);
+        goJourney(s, { notice: { title: '오래된 선물', lines: a.notice } });
+      });
+      return true;
+    }
     return false;
   }
   switchModal(from: Modal, to: Modal) { if (this.modal !== from) return; this.modal = to; this.draw(); }
@@ -197,6 +212,11 @@ export class JourneyScene extends Phaser.Scene {
         buttons.push({ text: '서린과 대화', onTap: () => this.talkSerin() });
         buttons.push({ text: '상점', onTap: () => this.switchModal('place', 'shop') });
         buttons.push({ text: current ? '밤차와 한 판 (2장 · 판돈 0)' : '밤차와 한 판 (연습 · 판돈 0)', onTap: () => { if (current) startChapterMatch(this, ch2, true); else startPractice(this, 'bamcha'); } });
+        if (p.chapterId === 'ch7') {
+          const learned = p.skills.includes('readThrough');
+          if (!learned) buttons.push({ text: '박 기사와 한 판 (간파 배우기)', onTap: () => startLessonMatch(this, 'courier', 'readThrough') });
+          buttons.push({ text: '뒷문 — 뱀눈 (7장)', onTap: () => startChapterMatch(this, chapterById('ch7'), true), enabled: learned });
+        }
       } else if (id === 'bath') {
         const wins = counter(p, COUNTERS.bathWins), ch3 = chapterById('ch3'), done = isChapterDone(p, 'ch3');
         lines.push({ text: `일반 대결 ${wins}승 (마 사장 입장: ${MA_ENTRY_WINS}승)  ·  판돈 1점 ${formatWon(place.stakePerPoint)}`, size: 13, color: COLORS.goldDim });
@@ -214,6 +234,14 @@ export class JourneyScene extends Phaser.Scene {
         buttons.push({ text: `판 치기 (일반 · 1점 ${formatWon(place.stakePerPoint)})`, onTap: () => this.sitNormal(id) });
         buttons.push({ text: isChapterDone(p, 'ch5') ? '강봉구와 대결(5장) · 완료' : '강봉구와 대결(5장)', onTap: () => startChapterMatch(this, ch5, true), enabled: canChallengeBonggu(p) });
         if (p.chapterId === 'ch6' || isChapterDone(p, 'ch6')) buttons.push({ text: isChapterDone(p, 'ch6') ? '큰 판(6장) · 끝남' : '큰 판(6장) · 두 판 연속', onTap: () => startChapterMatch(this, ch6), enabled: p.chapterId === 'ch6' });
+      } else if (id === 'billiards') {
+        const ch8 = chapterById('ch8'), done = isChapterDone(p, 'ch8');
+        buttons.push({ text: done ? '태오와 대결(8장) · 끝남' : '태오와 대결(8장) · 출입증과 정산 자료', onTap: () => startChapterMatch(this, ch8), enabled: p.chapterId === 'ch8' });
+      } else if (id === 'hotel') {
+        const ch9 = chapterById('ch9'), done = isChapterDone(p, 'ch9');
+        buttons.push({ text: done ? '흰 방의 아버지(9장) · 끝남' : '흰 방의 아버지(9장)', onTap: () => startChapterMatch(this, ch9), enabled: p.chapterId === 'ch9' });
+        if (done) lines.push({ text: '초대전 — 다음 이야기는 아직 준비 중', size: 16, color: COLORS.gold, bold: true });
+        if (place.stakePerPoint > 0) buttons.push({ text: `판 치기 (일반 · 1점 ${formatWon(place.stakePerPoint)})`, onTap: () => this.sitNormal(id) });
       } else {
         if (place.stakePerPoint > 0) buttons.push({ text: `판 치기 (일반 · 1점 ${formatWon(place.stakePerPoint)})`, onTap: () => this.sitNormal(id) });
       }
