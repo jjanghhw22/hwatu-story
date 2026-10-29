@@ -85,7 +85,7 @@ test('기술 8개·아이템 10개: id 유일, 수치는 바이블대로', () =>
   assert.deepEqual([SKILLS.swap.cost, SKILLS.swap.suspicion, SKILLS.swap.kind], [35, 25, 'cheat']);
   assert.ok(SKILLS.handSwap.rare && SKILLS.memory.rare);
   for (const id of SKILL_IDS) assert.ok(SKILLS[id].kind === 'cheat' ? SKILLS[id].suspicion > 0 : SKILLS[id].suspicion === 0, id);
-  unique(ITEM_IDS); assert.equal(ITEMS.length, 12, '바이블 10개 + 핫팩·우유');
+  unique(ITEM_IDS); assert.equal(ITEMS.length, 13, '바이블 10개 + 핫팩·우유·서린의 부적');
   ITEMS.forEach((it, i) => assert.equal(it.no, i + 1));
   assert.equal(ITEMS.find(i => i.id === 'riceBall')?.focus, 20);
   assert.equal(ITEMS.find(i => i.id === 'luckyCoin')?.successBonus, 15);

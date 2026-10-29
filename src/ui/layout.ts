@@ -51,7 +51,11 @@ export const EXTRA_SPLIT = { table: 0.7, handPad: 0.3 } as const;
 /** 기기 안전 여백(디자인 단위). top은 상단 띠 위에, bottom은 아래 안전 여백에 더한다. */
 export type SafeInsets = { top: number; bottom: number };
 /** 현재 높이에서 계산된 가변 값. configureLayout()이 갱신한다. */
-export const LAYOUT = { handTopPad: HAND_TOP_PAD, bottomSafe: BOTTOM_SAFE, insets: { top: 0, bottom: 0 } as SafeInsets, extra: 0 };
+export const LAYOUT = { handTopPad: HAND_TOP_PAD, bottomSafe: BOTTOM_SAFE, insets: { top: 0, bottom: 0 } as SafeInsets, extra: 0, skillRows: 1 as 1 | 2 };
+/** 기술 줄이 두 줄일 때도 지키는 화투판 최소 높이. */
+export const TABLE_MIN_H = 440;
+/** 한 줄에 둘 수 있는 기술 버튼 수(이보다 많으면 두 줄). */
+export const SKILL_ONE_ROW_MAX = 5;
 
 /**
  * 위에서 아래 순서의 영역. 손패(위 여백 + 두 줄 + 안전 여백)·정보·획득 패널 크기는 높이와 무관하게 같고, 남은 높이는 화투판과 손패 위 여백이 나눠 갖는다.
@@ -76,7 +80,7 @@ export const REGIONS: { topBar: Rect; oppInfo: Rect; oppCaptured: Rect; table: R
  * 배분: 먼저 안전 여백(top은 상단 띠 위, bottom은 아래 여백에 더함) → 남는 양(height − 1280 − top − bottom)의 70%를 화투판, 30%를 손패 위 여백에 더한다.
  * 남는 양이 음수(여백이 큰 기기)면 화투판에서만 뺀다. 손패·획득패·정보 패널 크기는 바뀌지 않는다.
  */
-export function configureLayout(height: number, insets: SafeInsets = { top: 0, bottom: 0 }): typeof REGIONS {
+export function configureLayout(height: number, insets: SafeInsets = { top: 0, bottom: 0 }, skillRows: 1 | 2 = 1): typeof REGIONS {
   const top = Math.max(0, Math.round(insets.top)), bottom = Math.max(0, Math.round(insets.bottom));
   DESIGN.height = Math.round(height);
   const extra = DESIGN.height - BASE_HEIGHT - top - bottom;
@@ -89,8 +93,13 @@ export function configureLayout(height: number, insets: SafeInsets = { top: 0, b
   LAYOUT.extra = extra;
   LAYOUT.handTopPad = HAND_TOP_PAD + padExtra;
   LAYOUT.bottomSafe = BOTTOM_SAFE + bottom;
+  // 기술 줄 두 줄(+52): 손패 위 여분(기본 24 초과분) → 화투판(최소 TABLE_MIN_H) → 내 획득 패 순으로 가져온다
+  let tableH = TABLE_H_BASE + tableExtra, myCapH = CAPTURED_H, need = (skillRows - 1) * SKILL_BAR_H;
+  LAYOUT.skillRows = skillRows;
+  const fromPad = Math.min(need, Math.max(0, LAYOUT.handTopPad - HAND_TOP_PAD)); LAYOUT.handTopPad -= fromPad; need -= fromPad;
+  const fromTable = Math.min(need, Math.max(0, tableH - TABLE_MIN_H)); tableH -= fromTable; need -= fromTable;
+  myCapH -= need;
   const handH = LAYOUT.handTopPad + CARD.hand.h * 2 + GAP + LAYOUT.bottomSafe;
-  const tableH = TABLE_H_BASE + tableExtra;
   let y = top;
   const put = (r: Rect, h: number) => { r.y = y; r.h = h; y += h; };
   put(REGIONS.topBar, TOP_H);
@@ -98,8 +107,8 @@ export function configureLayout(height: number, insets: SafeInsets = { top: 0, b
   put(REGIONS.oppCaptured, CAPTURED_H);
   put(REGIONS.table, tableH);
   put(REGIONS.myInfo, MY_INFO_H);
-  put(REGIONS.skillBar, SKILL_BAR_H);
-  put(REGIONS.myCaptured, CAPTURED_H);
+  put(REGIONS.skillBar, SKILL_BAR_H * skillRows);
+  put(REGIONS.myCaptured, myCapH);
   put(REGIONS.hand, handH);
   return REGIONS;
 }
@@ -144,27 +153,40 @@ export function activeBoxRect(reg: Rect, big: boolean): Rect {
  * 기술 줄(높이 52): 기술 버튼(높이 44, 폭 최대 140)을 왼쪽부터 최대 5개, 가방 버튼(폭 96)은 오른쪽 끝. 이름은 18, 비용·남은 횟수는 버튼 오른쪽 위 작은 배지(14).
  * 장비(마스크·투시경)와 소모품(사탕)은 가방 버튼을 누르면 기술 줄 위로 펼쳐지는 팝업에 들어간다. 공개한 더미 패(1~2장)는 버튼 오른쪽에 자리가 있으면 거기, 없으면 화투판 오른쪽 아래 구석.
  */
-export const SKILL_BAR = { btnW: INFO.peekW, btnH: 44, gap: 6, bagW: 96, maxButtons: 5, textSize: TEXT_MIN, badgeSize: 14, popupItemW: 128, popupH: 60 } as const;
+export const SKILL_BAR = { btnW: INFO.peekW, btnH: 44, gap: 6, bagW: 96, maxButtons: 5, perRow: 4, textSize: TEXT_MIN, badgeSize: 14, popupItemW: 128, popupH: 60 } as const;
 export type SkillBarLayout = { buttons: Rect[]; bag: Rect; preview: Rect; /** 공개 패 2장일 때 둘째 장 자리. */ preview2: Rect; /** 공개 패가 기술 줄 안에 들어가는지(아니면 화투판 구석). */ previewInBar: boolean };
 export function skillBarLayout(reg: Rect, nButtons: number): SkillBarLayout {
   const { btnH, gap, bagW } = SKILL_BAR;
-  const y = reg.y + Math.round((reg.h - btnH) / 2);
+  const bagRowY = reg.y + reg.h - SKILL_BAR_H + Math.round((SKILL_BAR_H - btnH) / 2);
+  const bag = { x: reg.w - MARGIN - bagW, y: bagRowY, w: bagW, h: btnH };
+  const t = REGIONS.table, pw = CARD.peek.w, ph = CARD.peek.h;
+  const corner = { x: t.x + t.w - 12 - pw * 2 - 4, y: t.y + t.h - 12 - ph, w: pw, h: ph };
+  if (nButtons > SKILL_ONE_ROW_MAX && reg.h >= SKILL_BAR_H * 2) {
+    // 두 줄: 윗줄 최대 4(오른쪽 끝까지), 아랫줄 최대 4 + 가방(맨 끝). 공개 패는 화투판 구석
+    const per = SKILL_BAR.perRow, n = Math.min(nButtons, per * 2);
+    const w1 = Math.min(SKILL_BAR.btnW, Math.floor((reg.w - MARGIN * 2 - (per - 1) * gap) / per));
+    const w2 = Math.min(SKILL_BAR.btnW, Math.floor((bag.x - gap - MARGIN - (per - 1) * gap) / per));
+    const row1Y = reg.y + Math.round((SKILL_BAR_H - btnH) / 2);
+    const buttons = Array.from({ length: n }, (_, i) => i < per ? { x: MARGIN + i * (w1 + gap), y: row1Y, w: w1, h: btnH } : { x: MARGIN + (i - per) * (w2 + gap), y: bagRowY, w: w2, h: btnH });
+    return { buttons, bag, preview: corner, preview2: { ...corner, x: corner.x + pw + 4 }, previewInBar: false };
+  }
+  const y = bagRowY;
   const n = Math.min(nButtons, SKILL_BAR.maxButtons);
-  const bag = { x: reg.w - MARGIN - bagW, y, w: bagW, h: btnH };
   const rightLimit = bag.x - gap;
   const btnW = n ? Math.min(SKILL_BAR.btnW, Math.floor((rightLimit - MARGIN - (n - 1) * gap) / n)) : SKILL_BAR.btnW;
   const buttons = Array.from({ length: n }, (_, i) => ({ x: MARGIN + i * (btnW + gap), y, w: btnW, h: btnH }));
-  const px = MARGIN + n * (btnW + gap), pw = CARD.peek.w, ph = CARD.peek.h;
+  const px = MARGIN + n * (btnW + gap);
   const previewInBar = px + pw * 2 + 4 <= rightLimit;
-  const t = REGIONS.table;
-  const preview = previewInBar ? { x: px, y: reg.y + Math.round((reg.h - ph) / 2), w: pw, h: ph } : { x: t.x + t.w - 12 - pw * 2 - 4, y: t.y + t.h - 12 - ph, w: pw, h: ph };
+  const preview = previewInBar ? { x: px, y: reg.y + reg.h - SKILL_BAR_H + Math.round((SKILL_BAR_H - ph) / 2), w: pw, h: ph } : corner;
   return { buttons, bag, preview, preview2: { ...preview, x: preview.x + pw + 4 }, previewInBar };
 }
+/** 이번 판 기술 버튼 수로 줄 수를 정한다(5개 초과면 두 줄). */
+export function skillRowsFor(nButtons: number): 1 | 2 { return nButtons > SKILL_ONE_ROW_MAX ? 2 : 1; }
 /** 가방 팝업: 기술 줄 바로 위, 오른쪽 맞춤. 항목 n개(최소 1칸: "비었음")를 가로로. */
 export function bagPopupLayout(reg: Rect, nItems: number): { panel: Rect; items: Rect[] } {
   const { popupItemW: iw, popupH: h, gap } = SKILL_BAR;
   const n = Math.max(1, nItems), w = n * iw + (n + 1) * gap;
-  const panel = { x: reg.w - MARGIN - w, y: reg.y - h - 4, w, h };
+  const panel = { x: reg.w - MARGIN - w, y: reg.y + reg.h - SKILL_BAR_H - h - 4, w, h };
   const items = Array.from({ length: nItems }, (_, i) => ({ x: panel.x + gap + i * (iw + gap), y: panel.y + 8, w: iw, h: h - 16 }));
   return { panel, items };
 }
@@ -407,9 +429,11 @@ export function capturedRects(reg: Rect, groups: Record<CapturedCell['kind'], re
     const cards = capturedOrder(cell.kind, groups[cell.kind]);
     const n = cards.length;
     if (n === 0) continue;
-    const s = miniStep(n, cell.w - 8, w, step);
+    // 기술 줄 두 줄로 내 획득 패 패널이 낮아진 경우에만 카드 높이를 패널에 맞춰 줄인다(기본 84에서는 64 그대로)
+    const ch = Math.min(h, cell.h - CAPTURED_TAG_H), cw = ch === h ? w : Math.round(ch * CARD_ASPECT);
+    const s = miniStep(n, cell.w - 8, cw, step);
     const y = cell.y + CAPTURED_TAG_H;
-    cards.forEach((c, i) => rects.set(c.id, { x: cell.x + 4 + i * s, y, w, h }));
+    cards.forEach((c, i) => rects.set(c.id, { x: cell.x + 4 + i * s, y, w: cw, h: ch }));
   }
   return { cells, rects };
 }

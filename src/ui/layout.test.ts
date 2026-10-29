@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BOTTOM_SAFE, CAPTURED_TAG_H, CARD, CARD_ASPECT, DESIGN, FLOOR_SLOTS, HAND_ARROW, HAND_MAIN_ROW, HAND_TOP_PAD, INFO, LAYOUT, REGIONS, SPEECH, activeBoxRect, capturedLayout, capturedOrder, capturedRects, configureLayout, fanDirection, floorLayout, flowChips, handLayout, miniStep, oppHandLayout, rotatedBounds, scoreBadgeRect, skillBarLayout, speechZone, tableInner, COUNT_ICON, FOCUS_BAR, MISSION_PANEL, SKILL_BAR, TABLE_H_NOMINAL, TABLE_MESSAGE, TEXT_MIN, bagPopupLayout, focusBarRect, suspicionBarRect } from './layout.ts';
+import { BOTTOM_SAFE, CAPTURED_TAG_H, CARD, CARD_ASPECT, DESIGN, FLOOR_SLOTS, HAND_ARROW, HAND_MAIN_ROW, HAND_TOP_PAD, INFO, LAYOUT, REGIONS, SPEECH, activeBoxRect, capturedLayout, capturedOrder, capturedRects, configureLayout, fanDirection, floorLayout, flowChips, handLayout, miniStep, oppHandLayout, rotatedBounds, scoreBadgeRect, skillBarLayout, speechZone, tableInner, COUNT_ICON, FOCUS_BAR, MISSION_PANEL, SKILL_BAR, TABLE_H_NOMINAL, TABLE_MESSAGE, TEXT_MIN, bagPopupLayout, focusBarRect, suspicionBarRect, TABLE_MIN_H, skillRowsFor } from './layout.ts';
 import { CARDS } from '../cards.ts';
 
 // 다른 테스트는 모두 1280 기준 배치를 본다
@@ -290,4 +290,27 @@ test('상태 칩 흐름 배치: 왼쪽부터 놓고 최대 x를 넘으면 다음
   assert.equal(rects[2].x, 100);
   assert.equal(flowChips([30, 40], 150, 0, 300, 100)[1].x, 150 + 44 + 6);
   assert.deepEqual(flowChips([], 0, 0, 100), []);
+});
+
+test('기술 8개 + 가방: 두 줄(윗줄 4 · 아랫줄 4 + 가방)이 모두 화면 안, 서로 겹치지 않음. 1280 화투판 ≥ 440, 획득 패는 패널 안', () => {
+  try {
+    for (const h of [1280, 1440, 1600]) {
+      configureLayout(h, { top: 0, bottom: 0 }, skillRowsFor(8));
+      const reg = REGIONS.skillBar, sb = skillBarLayout(reg, 8);
+      assert.equal(sb.buttons.length, 8);
+      const all = [...sb.buttons, sb.bag];
+      for (const r of all) { assert.ok(inside(r, reg), `${h}: 기술 줄 밖`); assert.ok(r.x >= 0 && r.x + r.w <= DESIGN.width); }
+      for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) assert.ok(!overlaps(all[i], all[j]), `${h}: ${i}·${j} 겹침`);
+      assert.ok(sb.bag.y > sb.buttons[0].y, '가방은 아랫줄');
+      assert.ok(REGIONS.table.h >= TABLE_MIN_H, `${h}: 화투판 ${REGIONS.table.h}`);
+      const o = [REGIONS.topBar, REGIONS.oppInfo, REGIONS.oppCaptured, REGIONS.table, REGIONS.myInfo, REGIONS.skillBar, REGIONS.myCaptured, REGIONS.hand];
+      for (let i = 1; i < o.length; i++) assert.ok(o[i].y >= o[i - 1].y + o[i - 1].h);
+      assert.equal(REGIONS.hand.y + REGIONS.hand.h, h);
+      const by = (k: string) => CARDS.filter(c => c.kind === k);
+      const lay = capturedRects(REGIONS.myCaptured, { 광: by('광'), 열끗: by('열끗'), 띠: by('띠'), 피: by('피') });
+      for (const cell of lay.cells) for (const c of by(cell.kind)) assert.ok(inside(lay.rects.get(c.id)!, cell), `${h}: 획득 패 밖`);
+    }
+    assert.equal(skillRowsFor(5), 1); assert.equal(skillRowsFor(6), 2);
+  } finally { configureLayout(1280); }
+  assert.equal(REGIONS.skillBar.h, 52, '한 줄로 돌아온다');
 });

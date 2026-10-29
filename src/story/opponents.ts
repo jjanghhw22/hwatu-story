@@ -4,9 +4,10 @@ import { type Opponent, STRATEGIC } from '../ai.ts';
 import { BEGINNER } from '../beginner.ts';
 import type { CharacterId } from '../character.ts';
 import { BARBER_LINES, type DialogSet } from '../dialog.ts';
-import { BOKHEE_LINES, FATHER_LINES, MA_LINES, MA_TAUNTS, SANGCHEOL_LINES, SILENT_LINES, TAEOH_LINES } from './lines.ts';
+import { BOKHEE_LINES, FATHER_LINES, JEONGHO_LINES, MA_LINES, MA_TAUNTS, MUJIN_LINES, SANGCHEOL_LINES, SANGMAN_LINES, SILENT_LINES, TAEOH_LINES, YURA_BLUFF, YURA_LINES } from './lines.ts';
+import type { BluffLines } from './bluff.ts';
 import type { CheatSpec } from './cheat.ts';
-import { provokedPolicy } from './policies.ts';
+import { conservativePolicy, provokedPolicy } from './policies.ts';
 import { EASY } from './policies.ts';
 
 export type OpponentId = 'barber' | 'bamcha' | 'ma' | 'bokhee' | 'bonggu' | 'stranger' | 'merchant' | 'courier' | 'highroller' | 'sangcheol' | 'taeoh' | 'father' | 'jeongho' | 'yura' | 'sangman' | 'mujin';
@@ -32,6 +33,16 @@ export type OpponentProfile = {
   learner?: boolean;
   /** 아버지: 내 실제 손패의 월을 짚는 말풍선(이 상대만 비공개 정보 허용), 접기 가르치기, 7점이면 거의 항상 고(최대 eagerGo고). */
   readsHand?: boolean; teachesFold?: boolean; eagerGo?: number;
+  /** 보수형(민정호): 고/스톱 가능하면 항상 스톱, 저지 ×1.3·박 완화 ×2. */
+  conservative?: boolean;
+  /** 역정보 말풍선 묶음(없으면 복희 것). */
+  bluffLines?: BluffLines;
+  /** 차유라: 자기 차례 이 확률로 가짜 흔들기 예고(말풍선 + 종소리만). */
+  fakeShake?: number;
+  /** 구상만: 판당 봉쇄 횟수(내 기술 처음 N번 무효, 집중력은 소모). */
+  blocks?: number;
+  /** 백무진: 한 판 안에서 3단계(king.ts). */
+  king?: boolean;
   /** 역정보형: 상대 차례 시작 때 이 확률로 실제 상태의 반대를 말한다(0~1). 없으면 말풍선 없음. */
   bluff?: number;
   /** 속공형: 내 턴 생각 시간 제한(ms). 없으면 제한 없음. */
@@ -65,10 +76,10 @@ export const OPPONENTS: Record<OpponentId, OpponentProfile> = {
   sangcheol: strategic('sangcheol', 'sangcheol', ['속임수'], 1.2, '7장. 속임수형(차례마다 35%, 판당 3회). 간파로 잡으면 판 몰수', { money: 12000000, cheat: { perTurn: 0.35, maxPerMatch: 3 }, lines: SANGCHEOL_LINES }),
   taeoh: strategic('taeoh', 'taeoh', ['학습'], 1.3, '8장. 학습형: 같은 기술 두 번이면 잠금, 연속 같은 분류는 저지 강화', { money: 2000000, learner: true, lines: TAEOH_LINES }),
   father: strategic('father', 'father', ['조급유도'], 0, '9장. 7점이면 거의 항상 고(최대 3고), 손패 읽기, 접기를 가르친다', { readsHand: true, teachesFold: true, eagerGo: 3, lines: FATHER_LINES }),
-  jeongho: strategic('jeongho', 'jeongho', ['보수'], 1.5, '10장. 보수형. 7점에 무조건 스톱, 피박 회피 최우선', { money: 50000000 }),
-  yura: strategic('yura', 'yura', ['역정보'], 1.5, '10장. 역정보 강화형 + 흔들기 블러핑', { money: 50000000 }),
-  sangman: strategic('sangman', 'sangman', ['봉쇄'], 1.5, '10장. 봉쇄형(대결당 3회)', { money: 50000000 }),
-  mujin: strategic('mujin', 'mujin', ['적응'], 2.0, '11장. 3단계 적응형', { money: 300000000 }),
+  jeongho: strategic('jeongho', 'jeongho', ['보수'], 1.5, '10장. 보수형: 고/스톱 가능하면 항상 스톱, 저지 ×1.3·박 완화 ×2', { money: 50000000, conservative: true, lines: JEONGHO_LINES }),
+  yura: strategic('yura', 'yura', ['역정보'], 1.5, '10장. 역정보 0.8 + 가짜 흔들기 예고 25%', { money: 50000000, bluff: 0.8, bluffLines: YURA_BLUFF, fakeShake: 0.25, lines: YURA_LINES }),
+  sangman: strategic('sangman', 'sangman', ['봉쇄'], 1.5, '10장. 봉쇄형: 내 기술 처음 3번 무효(집중력은 소모)', { money: 50000000, blocks: 3, lines: SANGMAN_LINES }),
+  mujin: strategic('mujin', 'mujin', ['적응'], 2.0, '11장. 한 판 안에서 3단계(견제 → 흔들기 → 왕의 손)', { money: 300000000, king: true, lines: MUJIN_LINES }),
 };
 export const OPPONENT_IDS = Object.keys(OPPONENTS) as OpponentId[];
 export const isOpponentId = (v: unknown): v is OpponentId => typeof v === 'string' && v in OPPONENTS;
@@ -77,5 +88,6 @@ export const isOpponentId = (v: unknown): v is OpponentId => typeof v === 'strin
 export function resolveOpponent(p: OpponentProfile): Opponent {
   const base = p.policy === 'beginner' ? BEGINNER : p.policy === 'easy' ? EASY : STRATEGIC;
   // 조급 유도(아버지): 7점이면 거의 항상 고, 최대 eagerGo고
+  if (p.conservative) return conservativePolicy(base);
   return p.eagerGo ? provokedPolicy(base, () => true, p.eagerGo) : base;
 }

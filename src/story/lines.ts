@@ -47,6 +47,21 @@ export const TAEOH_READ = '그거 또 쓸 줄 알았어.';
 export const FATHER_LINES: DialogSet = { ...SILENT_LINES, playerGo: ['또 가냐.'], playerWin: ['…이겼네. 그럼 됐다.'], aiWin: ['한 판 지는 게 무서우면, 결국 다 잃을 때까지 앉아 있게 된다.'], draw: ['다시.'] };
 export const FATHER_READ: readonly string[] = ['넌 지금 {m}월 들고 뻑 기다리지.', '{m}월은 아껴 둬 봐야 소용없다.', '그 {m}월, 바닥에 내려놓을 데가 없지?'];
 export const FATHER_TEACH_FOLD = '불리할 땐 접는 거다.';
+/** 10장 문지기·11장 백무진 결과 대사(바이블에 없어 인물 결에 맞춰 보탬). */
+export const JEONGHO_LINES: DialogSet = { ...SILENT_LINES, playerWin: ['계산이 틀렸군.', '…다음 문으로 가.'], aiWin: ['작게 이기는 게 제일 크게 이기는 거야.'], draw: ['다시 계산하지.'] };
+export const YURA_LINES: DialogSet = { ...SILENT_LINES, playerWin: ['어머, 들켰네.'], aiWin: ['연기는 끝까지 봐야지.'], draw: ['막이 덜 내렸네.'] };
+export const SANGMAN_LINES: DialogSet = { ...SILENT_LINES, playerWin: ['…지나가.'], aiWin: ['문은 안 열려.'], draw: ['다시.'] };
+export const MUJIN_LINES: DialogSet = { ...SILENT_LINES, playerWin: ['한 번 더.'], aiWin: ['네 아버지도 여기서 일어났지.'], draw: ['…다시.'] };
+/** 차유라 역정보(비관 3·낙관 3·사실 3). */
+export const YURA_BLUFF = {
+  pessimist: ['오늘은 패가 영 안 붙네.', '이번 판은 그냥 구경할게.', '나 피박 쓰겠다, 어쩌지?'],
+  optimist: ['이제 막만 내리면 돼.', '한 장이면 커튼콜이야.', '이 판, 내가 가져갈게.'],
+  truthful: ['아직 1막이야.', '이제 좀 무대가 데워지네.', '마지막 장면이 다가와.'] as [string, string, string],
+} as const;
+/** 11장 백무진: 판돈 제안, 거절 도발, 3단계 단서. */
+export const MUJIN_BET = '판을 두 배로 키우지.';
+export const MUJIN_TAUNT = '역시 아버지 아들이군.';
+export const KING_HAND_SIGN = '손끝이 멈췄다';
 /** 6장 큰 판 "걸릴 뻔": 상대가 손을 멈추고 쳐다본다. */
 export const NEAR_MISS_LINE = '…방금 뭐였지?';
 

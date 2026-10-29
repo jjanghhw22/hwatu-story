@@ -5,6 +5,7 @@ import type { PlaceId } from './places.ts';
 import type { ItemId } from './items.ts';
 import type { OpponentId } from './opponents.ts';
 import type { SkillId } from './skills.ts';
+import { FATHER_TEACH_FOLD } from './lines.ts';
 
 export type ChapterId = 'prologue' | 'ch1' | 'ch2' | 'ch3' | 'ch4' | 'ch5' | 'ch6' | 'ch7' | 'ch8' | 'ch9' | 'ch10' | 'ch11' | 'epilogue';
 
@@ -210,17 +211,32 @@ export const CHAPTERS: readonly Chapter[] = [
       ],
     },
   },
-  { id: 'ch10', no: 10, title: '왕의 식탁', cover: `${STORY_ASSET_DIR}/cover-ch10.png`, place: 'hotel', unlocks: [], opponentId: 'jeongho',
-    scenes: { before: placeholder('초대전 — 다음 이야기는 아직 준비 중'), after: placeholder('백무진 등장. 왕좌 제안. (다음 단계)') } },
-  { id: 'ch11', no: 11, title: '왕이 없는 밤', cover: `${STORY_ASSET_DIR}/cover-ch11.png`, place: 'hotel', unlocks: [], opponentId: 'mujin',
-    scenes: { before: placeholder('백무진. 3단계 한 판. (다음 단계)'), after: placeholder('“한 번 더.” 고 / 스톱. (다음 단계)') } },
+  {
+    id: 'ch10', no: 10, title: '왕의 식탁', cover: `${STORY_ASSET_DIR}/cover-ch10.png`, place: 'hotel', unlocks: [], opponentId: 'jeongho',
+    scenes: {
+      before: [
+        cut('ch10-barber.png', '초대전 전날 밤. 대식이 이발소 열쇠를 내민다.'),
+        line('barber', '이발소를 담보로 잡아라. 판돈이 모자라면 그걸로 해.'),
+        line('player', '이번에는 아무도 집 걸지 마요.'),
+        cut('ch10-hotel.png', '백운호텔 초대전. 문지기 셋을 차례로 넘어야 한다. 판 사이에는 나가서 쉬어도 된다.'),
+      ],
+      after: [],
+    },
+  },
+  {
+    id: 'ch11', no: 11, title: '왕이 없는 밤', cover: `${STORY_ASSET_DIR}/cover-ch11.png`, place: 'hotel', unlocks: [], opponentId: 'mujin',
+    scenes: {
+      before: [cut('ch11-table.png', '왕의 식탁. 백무진이 맞은편에 앉는다. 판은 한 번, 그러나 판이 끝나지 않고 단계가 바뀐다.')],
+      after: [line('mujin', '한 번 더.'), cut('ch11-voice.png', '처음으로 큰 목소리.'), line('mujin', '이번엔 네가 원하는 거 전부.')],
+    },
+  },
   { id: 'epilogue', no: 12, title: '머리 자르는 날', cover: `${STORY_ASSET_DIR}/cover-epilogue.png`, place: 'barber', unlocks: [],
     scenes: { before: placeholder('이번에는 집에 돌아왔다. (다음 단계)'), after: [] } },
 ];
 
 export const CHAPTER_IDS = CHAPTERS.map(c => c.id);
 /** 이야기·대결이 실제로 구현된 장. 그 뒤 장의 무대는 지도에서 잠긴 채 보인다(보정: 다음 목적지 ▶는 집에). */
-export const IMPLEMENTED_CHAPTERS: readonly ChapterId[] = ['prologue', 'ch1', 'ch2', 'ch3', 'ch4', 'ch5', 'ch6', 'ch7', 'ch8', 'ch9'];
+export const IMPLEMENTED_CHAPTERS: readonly ChapterId[] = ['prologue', 'ch1', 'ch2', 'ch3', 'ch4', 'ch5', 'ch6', 'ch7', 'ch8', 'ch9', 'ch10', 'ch11'];
 /** 6장 그날 밤 집 장면(비닐봉지): 휴식 직전 1회. */
 export const NIGHT_CH6_SCENES: Scene[] = [
   cut('ch6-bag.png', '문 앞 비닐봉지. 삼각김밥 둘, 생수.'),
@@ -235,6 +251,23 @@ export const CH8_DECLINE: Scene[] = [line('player', '자료만 줘.'), line('tae
 /** 9장: 접었을 때(아버지가 처음으로 고개를 끄덕인다) / 이겼을 때. */
 export const CH9_FOLD: Scene[] = [cut('ch9-nod.png', '아버지가 처음으로 고개를 끄덕인다.')];
 export const CH9_WIN: Scene[] = [line('father', '…이겼네. 그럼 됐다.')];
+/** 10장: 문지기 셋을 다 이기면 백무진 등장(바이블 대사 전부) → 선택. */
+export const MUJIN_APPEAR: Scene[] = [
+  cut('ch10-mujin.png', '비싼 옷, 작은 목소리. 사람들이 먼저 눈치를 본다.'),
+  line('mujin', '네 아버지는 일을 잘했는데, 끝에 가서 마음이 약해졌어.'),
+  line('player', '나한테는 뭘 시키려고요?'),
+  line('mujin', '아무것도. 네가 이기는 모습만 보여주면 돼. 그러면 사람들은 자기들도 이길 수 있다고 믿거든.'),
+];
+/** 10장 서린의 마지막 상품(편의점 첫 방문). 낡은 회중시계는 9장 뒤에 이미 받았으므로 이번 상품은 부적. */
+export const SERIN_LAST_ITEM: Scene[] = [
+  cut('ch10-charm.png', '서린이 계산대 밑에서 작은 부적 하나를 꺼낸다.'),
+  line('seorin', '환불은 안 돼.'),
+  line('player', '아직 얼마인지도 안 물어봤는데?'),
+  line('seorin', '그러니까 살아서 가져와. 고장은 봐줄게.'),
+];
+/** 10장 관계 분기(바이블 8절). */
+export const SERIN_ROUTE_ASK: Scene[] = [line('seorin', '너 내가 왜 도와주는지 알았잖아.'), line('player', '알았어. 그래서 고맙기도 했고, 무섭기도 했어.')];
+export const SERIN_ROUTE_REPLY = { friend: '그래. 친구로 남자. 그게 제일 오래가.', slow: '천천히 가 보자. 급할 거 없잖아.', distance: '잠깐 거리를 두자. 다 끝나고 다시 얘기해.' } as const;
 /** 7장 첫 편의점 방문 앞에 1회: 서린 사건 '수상한 방문객'. */
 export const CH7_VISITOR: Scene[] = [cut('ch7-visitor.png', '계산대 너머로 같은 남자가 또 기웃거린다.'), line('seorin', '저 사람 또 왔어.')];
 /** 7장 간파 배우기: 서린이 배송 기사를 소개한다. */
@@ -266,9 +299,15 @@ export function placeOpensLabel(opensAt: 'start' | ChapterId): string | null {
 }
 
 /** 장 승리 방식별 after 앞 장면과 플래그: 7장(잡기로 이기면 원본, 아니면 사본), 9장(접으면 끄덕임, 이기면 다른 한 줄). 9장은 접기·승리 모두 완료. */
-export function chapterWinVariant(id: ChapterId, how: { caught?: boolean; folded?: boolean }): { prefix: Scene[]; flags: string[] } {
+export function chapterWinVariant(id: ChapterId, how: { caught?: boolean; folded?: boolean; untaught?: boolean; lost?: boolean }): { prefix: Scene[]; flags: string[] } {
   if (id === 'ch7') return how.caught ? { prefix: CH7_ORIGINAL, flags: ['ch7.original'] } : { prefix: CH7_COPY, flags: ['ch7.copy'] };
-  if (id === 'ch9') return how.folded ? { prefix: CH9_FOLD, flags: ['ch9.folded'] } : { prefix: CH9_WIN, flags: ['ch9.won'] };
+  if (id === 'ch9') {
+    // 판에서 가르칠 순간이 한 번도 안 왔으면 after 앞에 "불리할 땐 접는 거다."로 가르치고 9장을 끝낸다(진행이 막히지 않게, 진 판이어도)
+    const teach: Scene[] = how.untaught ? [line('father', FATHER_TEACH_FOLD)] : [];
+    if (how.folded) return { prefix: CH9_FOLD, flags: ['ch9.folded'] };
+    if (how.lost) return { prefix: teach, flags: ['ch9.taughtAfter'] };
+    return { prefix: [...teach, ...CH9_WIN], flags: how.untaught ? ['ch9.won', 'ch9.taughtAfter'] : ['ch9.won'] };
+  }
   return { prefix: [], flags: [] };
 }
 /** 8장 선택: 받아들이면 9장부터 태오 버튼이 다시 생긴다. */

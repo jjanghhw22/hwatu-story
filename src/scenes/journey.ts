@@ -3,12 +3,16 @@
 import Phaser from 'phaser';
 import { seededRng } from '../rng';
 import { SCENARIOS } from '../scenarios';
-import { CH5_RAMEN_SCENES, CH7_COURIER, CH7_VISITOR, CHAPTERS, GIFT_SCENES, type Chapter, NIGHT_CH6_SCENES, chapterById, chapterLabel, isChapterImplemented, placeOpensLabel } from '../story/chapters';
+import { CH5_RAMEN_SCENES, CH7_COURIER, CH7_VISITOR, CHAPTERS, type ChapterId, GIFT_SCENES, SERIN_LAST_ITEM, SERIN_ROUTE_ASK, SERIN_ROUTE_REPLY, type Chapter, NIGHT_CH6_SCENES, chapterById, chapterLabel, isChapterImplemented, placeOpensLabel } from '../story/chapters';
 import { ERRANDS, type ErrandId, canChallengeBokhee, completeErrand, errandById, errandsDone, isErrandDone } from '../story/errands';
 import { FLAGS, type ItemId, itemById, shopItems } from '../story/items';
 import { PLACES, PLACE_IDS, type PlaceId, canSit, isPlaceReady } from '../story/places';
-import { BONGGU_ENTRY_WINS, COUNTERS, MA_ENTRY_WINS, type Progress, addMoney, addToBag, canChallengeBonggu, isDebtFrozen, isNightLocked, winsKey, SEIZURE_NOTICE, bagCount, buyItem, canChallengeMa, counter, currentChapter, equipGear, formatManWon, formatWon, formatWonDelta, isBanned, isChapterDone, loadProgress, resetProgress, rest, saveProgress, setFlag, unequipGear, useItemOnMap } from '../story/progress';
+import { BONGGU_ENTRY_WINS, COUNTERS, MA_ENTRY_WINS, type Progress, addMoney, completeChapter, addToBag, canChallengeBonggu, isDebtFrozen, isNightLocked, winsKey, SEIZURE_NOTICE, bagCount, buyItem, canChallengeMa, counter, currentChapter, equipGear, formatManWon, formatWon, formatWonDelta, isBanned, isChapterDone, loadProgress, resetProgress, rest, saveProgress, setFlag, unequipGear, useItemOnMap } from '../story/progress';
 import { GEAR_SLOTS } from '../story/items';
+import { GATES, type GateNo, type SerinRoute, canChallengeGate, gateFlag, routeStep, setRoute } from '../story/gates';
+import { ENDING_TITLES, endingsSeen, progressAtChapter } from '../story/endings';
+import { OPPONENTS } from '../story/opponents';
+import { CHARACTERS } from '../character';
 import { noteMissing } from '../ui/missing';
 import { type SerinEventId, applyEvent, serinEventById, tierName, visitSerin } from '../story/serin';
 import { SKILLS } from '../story/skills';
@@ -19,9 +23,9 @@ import { missingAssets } from '../ui/missing';
 import { type ModalButton, type ModalLine, drawModal } from '../ui/modals';
 import { SoundFx } from '../ui/sound';
 import { COLORS, FONT, type UI, box, button, label, panel } from '../ui/widgets';
-import { type JourneyLaunch, SCENE_KEYS, goJourney, playStory, startChapterMatch, startErrandMatch, startLessonMatch, startNormalMatch, startPractice, startTable } from './flow';
+import { type JourneyLaunch, SCENE_KEYS, goJourney, playEnding, playStory, startChapterMatch, startErrandMatch, startLessonMatch, startNormalMatch, startPractice, startTable } from './flow';
 
-type Modal = 'none' | 'place' | 'menu' | 'rules' | 'credits' | 'devinfo' | 'scenarios' | 'reward' | 'box' | 'shop' | 'bag' | 'notice' | 'choice' | 'noMoney' | 'gear' | 'errands' | 'errandChoice';
+type Modal = 'kingChoice' | 'finalChoice' | 'routeChoice' | 'jump' | 'jumpConfirm' | 'none' | 'place' | 'menu' | 'rules' | 'credits' | 'devinfo' | 'scenarios' | 'reward' | 'box' | 'shop' | 'bag' | 'notice' | 'choice' | 'noMoney' | 'gear' | 'errands' | 'errandChoice';
 /** 노드 색: 열린 곳은 어두운 녹색 + 황동, 잠긴 곳은 회색, 오늘 출입 금지(들통)는 붉은 테두리. */
 const NODE = { open: 0x15302a, openEdge: 0xb08d4a, locked: 0x1c1c1a, lockedEdge: 0x444039, lockedText: '#6f6a60', link: 0x7a6236, banned: 0xc0392b } as const;
 const coverKey = (path: string) => `cover:${path}`;
@@ -40,13 +44,15 @@ export class JourneyScene extends Phaser.Scene {
   noMoneyPlace?: PlaceId;
   /** 밤 → 아침 전환 중 입력 잠금. */
   busy = false;
+  /** 장 바로가기 대상(확인 창). */
+  jumpTo?: ChapterId;
   /** 선택이 있는 심부름(가게 비운 사람 돕기). */
   errandChoice?: ErrandId;
   constructor() { super(SCENE_KEYS.journey); }
   init(data: JourneyLaunch = {}) {
     this.launch = data; this.selected = data.openPlace; this.busy = false; this.choiceEvent = data.serinChoice;
     this.errandChoice = data.errandChoice;
-    this.modal = data.reward || data.chapterDone ? 'reward' : data.serinChoice ? 'choice' : data.errandChoice ? 'errandChoice' : data.notice ? 'notice' : data.openPlace ? 'place' : 'none';
+    this.modal = data.kingChoice ? 'kingChoice' : data.finalChoice ? 'finalChoice' : data.routeChoice ? 'routeChoice' : data.reward || data.chapterDone ? 'reward' : data.serinChoice ? 'choice' : data.errandChoice ? 'errandChoice' : data.notice ? 'notice' : data.openPlace ? 'place' : 'none';
     if (data.notice) this.notice = data.notice;
   }
   /** 현재 장 대표 컷(없으면 어두운 패널). 읽기 실패는 조용히 기록. */
@@ -73,7 +79,7 @@ export class JourneyScene extends Phaser.Scene {
   isOpen(id: PlaceId) { return this.progress.unlockedPlaces.includes(id) && isPlaceReady(id); }
   /** 다음 목적지: 현재 장의 무대. 아직 잠겨 있으면(구현 전) 집. */
   get nextPlace(): PlaceId { const ch = this.chapter; return isChapterImplemented(ch.id) && this.isOpen(ch.place) && !isChapterDone(this.progress, ch.id) ? ch.place : 'home'; }
-  get nextIsPreparing() { return !isChapterImplemented(this.chapter.id) || (this.nextPlace === 'home' && this.chapter.place !== 'home'); }
+  get nextIsPreparing() { if (endingsSeen(this.progress).length) return false; return !isChapterImplemented(this.chapter.id) || (this.nextPlace === 'home' && this.chapter.place !== 'home'); }
   save() { saveProgress(this.progress); }
   /** 소지금 변화 "+N원/−N원"을 머리 패널의 소지금 글자 옆에 띄운다. */
   pulseMoney(delta: number) { if (!delta) return; const H = JOURNEY.header; this.fx.scorePulse(undefined, DESIGN.width - MARGIN - 24, H.y + 46, delta, 1, formatWonDelta(delta)); }
@@ -98,7 +104,8 @@ export class JourneyScene extends Phaser.Scene {
     panel(ui, MARGIN, H.y, DESIGN.width - MARGIN * 2, H.h, 'wood');
     label(ui, MARGIN + 24, H.y + 14, `DAY ${p.day}`, 24, COLORS.gold, 200, [0, 0], true);
     label(ui, DESIGN.width - MARGIN - 24, H.y + 14, formatWon(p.money), 24, COLORS.text, 300, [1, 0], true).setName('money');
-    label(ui, MARGIN + 24, H.y + 48, chapterLabel(ch), 14, COLORS.muted, 400, [0, 0]);
+    const ends = endingsSeen(p);
+    label(ui, MARGIN + 24, H.y + 48, ends.length ? `엔딩 ${ends.join('·')} 달성` : chapterLabel(ch), 14, ends.length ? COLORS.gold : COLORS.muted, 400, [0, 0], ends.length > 0);
     // 6장 뒤: 돈으로는 해결이 안 된다 — 압류 예고 금액 대신 회색 "동결"
     if (isDebtFrozen(p)) label(ui, DESIGN.width - MARGIN - 24, H.y + 44, '압류 예고 · 동결', 13, COLORS.muted, 240, [1, 0], true);
     else label(ui, DESIGN.width - MARGIN - 24, H.y + 44, `압류 예고 ${formatManWon(SEIZURE_NOTICE)}`, 13, COLORS.bakWarn, 240, [1, 0], true);
@@ -155,6 +162,19 @@ export class JourneyScene extends Phaser.Scene {
       const c7 = chapterById('ch7');
       this.progress = { ...p, serin: { ...p.serin, seen: p.serin.seen.includes('visitor') ? p.serin.seen : [...p.serin.seen, 'visitor'] } };
       return play('ch7.visited', chapterLabel(c7), [...CH7_VISITOR, ...c7.scenes.before, ...CH7_COURIER]);
+    }
+    // 10장 시작(9장 다음 날 호텔): 대식의 담보 제안 장면
+    if (id === 'hotel' && p.chapterId === 'ch10' && !p.flags['ch10.visited']) { const c10 = chapterById('ch10'); return play('ch10.visited', chapterLabel(c10), c10.scenes.before); }
+    // 10장 중 편의점 첫 방문: 서린의 마지막 상품(서린의 부적)
+    if (id === 'store' && p.chapterId === 'ch10' && !p.flags['ch10.charm']) {
+      this.progress = addToBag(this.progress, 'serinCharm'); return play('ch10.charm', chapterLabel(chapterById('ch10')), SERIN_LAST_ITEM);
+    }
+    // 10장 중 편의점 두 번째 방문: 관계 분기(호감 8 이상이면 선택, 아니면 조용히 friend)
+    const rs = routeStep(p);
+    if (id === 'store' && rs === 'default') { this.progress = setRoute(p, 'friend'); this.save(); }
+    if (id === 'store' && rs === 'ask') {
+      playStory(this, '편의점', SERIN_ROUTE_ASK, s => goJourney(s, { routeChoice: true }));
+      return true;
     }
     // 9장 완료 뒤 첫 편의점 방문: 서린 사건 '오래된 선물'(낡은 회중시계)
     if (id === 'store' && isChapterDone(p, 'ch9') && !p.flags[FLAGS.serinWatch] && !p.flags['gift.played']) {
@@ -239,8 +259,15 @@ export class JourneyScene extends Phaser.Scene {
         buttons.push({ text: done ? '태오와 대결(8장) · 끝남' : '태오와 대결(8장) · 출입증과 정산 자료', onTap: () => startChapterMatch(this, ch8), enabled: p.chapterId === 'ch8' });
       } else if (id === 'hotel') {
         const ch9 = chapterById('ch9'), done = isChapterDone(p, 'ch9');
-        buttons.push({ text: done ? '흰 방의 아버지(9장) · 끝남' : '흰 방의 아버지(9장)', onTap: () => startChapterMatch(this, ch9), enabled: p.chapterId === 'ch9' });
-        if (done) lines.push({ text: '초대전 — 다음 이야기는 아직 준비 중', size: 16, color: COLORS.gold, bold: true });
+        if (!done) buttons.push({ text: '흰 방의 아버지(9장)', onTap: () => startChapterMatch(this, ch9), enabled: p.chapterId === 'ch9' });
+        // 10장 초대전: 민정호 → 차유라 → 구상만 순서대로 열린다(판 사이에 나가서 쉬어도 된다). 장 대결·판돈 0·미션 있음
+        if (p.chapterId === 'ch10') ([1, 2, 3] as GateNo[]).forEach(n => {
+          const won = p.flags[gateFlag(n)] === true, name = CHARACTERS[OPPONENTS[GATES[n - 1]].characterId];
+          buttons.push({ text: `${won ? '✓ ' : ''}초대전 ${n} — ${name.name} ‘${name.nickname ?? ''}’`, onTap: () => startTable(this, { chapterId: 'ch10', opponentId: GATES[n - 1], practice: false, stake: 0, placeId: 'hotel', gate: n }), enabled: canChallengeGate(p, n) });
+        });
+        if (p.chapterId === 'ch11') buttons.push({ text: '왕의 식탁 — 백무진(11장)', onTap: () => startChapterMatch(this, chapterById('ch11')) });
+        // 엔딩 뒤: 본 엔딩 다시 보기
+        for (const e of endingsSeen(p)) buttons.push({ text: `다시 보기 · ${ENDING_TITLES[e]}`, onTap: () => playEnding(this, e) });
         if (place.stakePerPoint > 0) buttons.push({ text: `판 치기 (일반 · 1점 ${formatWon(place.stakePerPoint)})`, onTap: () => this.sitNormal(id) });
       } else {
         if (place.stakePerPoint > 0) buttons.push({ text: `판 치기 (일반 · 1점 ${formatWon(place.stakePerPoint)})`, onTap: () => this.sitNormal(id) });
@@ -248,6 +275,39 @@ export class JourneyScene extends Phaser.Scene {
       buttons.push(close('place'));
       const title = id === 'home' && p.flags['home.newFurniture'] ? `${place.name} · 새 가구` : place.name;
       drawModal(ui, { title, alpha: 0.85, lines, buttons });
+    }
+    if (this.modal === 'kingChoice') {
+      drawModal(ui, { title: '왕의 제안', titleColor: COLORS.gold, alpha: 0.9, lines: [{ text: '“네가 이기는 모습만 보여주면 돼.” 자리를 받아들일까, 마지막 판을 요구할까.', size: 18, color: COLORS.text }], buttons: [
+        { text: '자리를 받아들인다', onTap: () => { if (this.modal !== 'kingChoice') return; playEnding(this, 'C'); } },
+        { text: '마지막 판을 요구한다', onTap: () => this.demandFinal(), fill: 0xe0875a },
+      ] });
+    }
+    if (this.modal === 'finalChoice') {
+      // 기존 고/스톱 창 디자인: 고 주황, 스톱 금색
+      drawModal(ui, { title: '마지막 선택', alpha: 0.9, lines: [{ text: '“이번엔 네가 원하는 거 전부.”', size: 20, color: COLORS.gold }, { text: '고를 외치면 더 어려운 추가 승부(백무진 4단계). 스톱하면 여기서 끝낸다.', size: 18, color: COLORS.text }], buttons: [
+        { text: '고 · 추가 승부', onTap: () => { if (this.modal !== 'finalChoice') return; startTable(this, { chapterId: 'ch11', opponentId: 'mujin', practice: false, stake: 0, placeId: 'hotel', kingFinal: true }); }, fill: 0xe0875a },
+        { text: '스톱', onTap: () => { if (this.modal !== 'finalChoice') return; playEnding(this, 'A'); } },
+      ] });
+    }
+    if (this.modal === 'routeChoice') {
+      const pick = (r: SerinRoute) => () => { if (this.modal !== 'routeChoice') return; this.progress = setRoute(this.progress, r); this.save(); this.notice = { title: '윤서린', lines: [`“${SERIN_ROUTE_REPLY[r]}”`] }; this.modal = 'notice'; this.draw(); };
+      drawModal(ui, { title: '서린', alpha: 0.9, lines: [{ text: '“너 내가 왜 도와주는지 알았잖아.”', size: 18, color: COLORS.gold }], buttons: [
+        { text: '친구로 남자', onTap: pick('friend') }, { text: '천천히 가 보자', onTap: pick('slow') }, { text: '잠깐 거리를 두자', onTap: pick('distance') },
+      ] });
+    }
+    if (this.modal === 'jump') {
+      const ids = CHAPTERS.filter(c => c.id !== 'prologue' && c.id !== 'epilogue').map(c => c.id);
+      drawModal(ui, { title: '장 바로가기(개발용)', alpha: 0.92, lines: [{ text: '그 장 시작 상태로 진행을 덮어씁니다(앞 장 완료·보상 반영).', size: 14 }], buttons: [
+        ...ids.map(id => ({ text: chapterLabel(chapterById(id)), onTap: () => { if (this.modal !== 'jump') return; this.jumpTo = id; this.modal = 'jumpConfirm'; this.draw(); } })),
+        close('jump', 'devinfo'),
+      ] });
+    }
+    if (this.modal === 'jumpConfirm' && this.jumpTo) {
+      const id = this.jumpTo;
+      drawModal(ui, { title: '진행을 덮어쓸까요?', alpha: 0.92, lines: [{ text: `지금 진행이 사라지고 ${chapterLabel(chapterById(id))} 시작 상태가 됩니다.`, size: 16, color: COLORS.text }], buttons: [
+        { text: '덮어쓴다', onTap: () => { if (this.modal !== 'jumpConfirm') return; saveProgress(progressAtChapter(id)); this.scene.start(SCENE_KEYS.boot); }, fill: 0xe0875a },
+        close('jumpConfirm', 'jump'),
+      ] });
     }
     if (this.modal === 'errands') {
       // 4장 심부름 셋: 물건 찾기(상인과 한 판), 가게 비운 사람 돕기(선택), 연락 끊긴 상인(단서). 끝낸 것은 비활성
@@ -335,6 +395,7 @@ export class JourneyScene extends Phaser.Scene {
         { text: '진행 초기화는 저장(hwatu.progress.v1)을 지우고 프롤로그부터 다시 시작합니다.', size: 13 },
       ], buttons: [
         { text: '진행 초기화', onTap: () => { if (this.modal !== 'devinfo') return; resetProgress(); this.scene.start(SCENE_KEYS.boot); } },
+        { text: '장 바로가기', onTap: () => this.switchModal('devinfo', 'jump') },
         { text: '시나리오', onTap: () => this.switchModal('devinfo', 'scenarios') },
         close('devinfo', 'menu'),
       ] });
@@ -402,6 +463,12 @@ export class JourneyScene extends Phaser.Scene {
     this.pulseMoney(a.moneyDelta);
   }
   /** 집 휴식: 검은 막이 내려오며 "다음 날" → 진행 갱신·저장 → 막이 걷힌다. 전환 중 입력 잠금. */
+  /** 10장 끝: 마지막 판을 요구한다 → 10장 완료(11장으로) → 보상 창. */
+  demandFinal() {
+    if (this.modal !== 'kingChoice') return;
+    this.progress = completeChapter(this.progress, chapterById('ch10')); this.save();
+    this.launch = { chapterDone: 'ch10' }; this.modal = 'reward'; this.draw();
+  }
   /** 심부름 시작: 물건 찾기는 before 장면 → 상인과 한 판(판돈 0), 돕기는 before 장면 → 선택 창, 단서는 장면 → 완료. */
   startErrand(id: ErrandId) {
     if (this.modal !== 'errands') return;

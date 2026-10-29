@@ -1,5 +1,5 @@
 // 상대 정책 래퍼. ai.ts·beginner.ts는 고치지 않고 기존 Opponent 둘을 감싸 성격을 만든다. 모두 공개 정보(AiView)만 보고, 난수는 주입받는다.
-import { type AiView, type Opponent, STRATEGIC } from '../ai.ts';
+import { AI_WEIGHTS, type AiView, type Opponent, STRATEGIC, chooseHandCard } from '../ai.ts';
 import { BEGINNER } from '../beginner.ts';
 import { scoreCaptured } from '../score.ts';
 
@@ -15,6 +15,22 @@ export function mixedPolicy(a: Opponent, b: Opponent, ratio = 0.5, key = 'mixed'
     chooseFloorTarget: b.chooseFloorTarget,
     chooseGukjin: b.chooseGukjin,
     decideGoStop: b.decideGoStop,
+  };
+}
+/** 보수형(10장 민정호): 상대 조합 저지 ×1.3, 피박·광박 완화 ×2(공개 정보만). */
+export const CONSERVATIVE_WEIGHTS = { ...AI_WEIGHTS, block: AI_WEIGHTS.block * 1.3, piBak: AI_WEIGHTS.piBak * 2, gwangBak: AI_WEIGHTS.gwangBak * 2 };
+/** 보수형 래퍼: 손패는 보수 가중치로, 고/스톱은 가능하면 항상 스톱. 폭탄·기회 패는 원래 정책. */
+export function conservativePolicy(base: Opponent): Opponent {
+  return {
+    ...base,
+    key: `${base.key}+보수`,
+    chooseAction(v, rng, done) {
+      const a = base.chooseAction(v, rng, done);
+      if (a.kind !== 'normal') return a;
+      const d = chooseHandCard(v, CONSERVATIVE_WEIGHTS);
+      return { kind: 'normal', cardId: d.cardId, targetId: d.targetId, reason: `보수형(저지 ×1.3·박 완화 ×2): ${d.reason}` };
+    },
+    decideGoStop: () => ({ decision: 'stop', reason: '보수형: 고/스톱 가능하면 항상 스톱' }),
   };
 }
 /** 쉬운 일반 상대(목욕탕 등): 초보와 전략을 50:50. */

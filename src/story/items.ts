@@ -1,7 +1,7 @@
 // 편의점 아이템 데이터(바이블 7절, 10개). 효과는 설명 글자 + 수치 필드.
 // 동작(F2·F3): 삼각김밥·캔커피·행운의 동전(지도에서 사용), 포도당 사탕(대결 중), 숙면 안대·무표정 마스크·투시경 안경(장비). 진동 손목시계·회중시계·도시락은 데이터만.
 // 상점 해금은 Progress.flags의 플래그로 판정한다(unlockFlag가 null이면 처음부터).
-export type ItemId = 'riceBall' | 'canCoffee' | 'glucoseCandy' | 'warmLunch' | 'sleepMask' | 'xrayGlasses' | 'blankMask' | 'luckyCoin' | 'buzzWatch' | 'pocketWatch' | 'hotPack' | 'milk';
+export type ItemId = 'riceBall' | 'canCoffee' | 'glucoseCandy' | 'warmLunch' | 'sleepMask' | 'xrayGlasses' | 'blankMask' | 'luckyCoin' | 'buzzWatch' | 'pocketWatch' | 'hotPack' | 'milk' | 'serinCharm';
 export type ItemKind = 'consumable' | 'gear';
 
 export type Item = {
@@ -62,6 +62,8 @@ export const ITEMS: readonly Item[] = [
   item('hotPack', 11, '핫팩', 'consumable', '집중력 +15', '대결 중 불가', '서린 토요일 약속', 'serin.saturdayDone', null, 'map', { focus: 15 }),
   /** 서린 '앉아 있다 가'의 우유(목록 밖 소모품, 판매 안 함). */
   item('milk', 12, '우유', 'consumable', '집중력 +10', '대결 중 불가', '서린 앉아 있다 가', 'serin.sitDone', null, 'map', { focus: 10 }),
+  /** 10장 서린의 마지막 상품(목록 밖 장비, 판매 안 함). */
+  item('serinCharm', 13, '서린의 부적', 'gear', '의심도가 100에 닿는 순간 70으로 되돌린다(들통 1회 막기)', '대결당 1회', '10장 서린의 마지막 상품', 'ch10.charm', null, 'gear'),
 ];
 export const ITEM_IDS = ITEMS.map(i => i.id);
 export const isItemId = (v: unknown): v is ItemId => typeof v === 'string' && ITEMS.some(i => i.id === v);

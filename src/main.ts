@@ -25,13 +25,19 @@ import {CATCH_WINDOW_MS,cheatReaction,decideCheat,pickCheatCard} from './story/c
 import {type CaptureKind,FATHER_READ_TURN,canFold,captureStreak,fatherRead,isSkillRead,justRead,learnerPolicy,pickWatchTarget,shouldTeachFold} from './story/learner';
 import {FATHER_READ,FATHER_TEACH_FOLD,TAEOH_READ} from './story/lines';
 import {taeohAvailable} from './story/tempo';
+import {FAKE_SHAKE_LINE,type GateNo,applyCharm,consumeBlock,fakeShake,winGate} from './story/gates';
+import {type KingStage,CUT_IN_MS,KING,nextKingStage,skillCounterKey,stageCheat,stageCutIn,stageLocks,topSkills} from './story/king';
+import {KING_HAND_SIGN,MUJIN_BET,MUJIN_TAUNT} from './story/lines';
+import {TEACH_FOLD} from './story/learner';
+import {MUJIN_APPEAR} from './story/chapters';
+import type {CheatSpec} from './story/cheat';
 import type {ItemId} from './story/items';
-import {type TableLaunch,SCENE_KEYS,finishChapterWin,goJourney,nextBigTable} from './scenes/flow';
+import {type TableLaunch,SCENE_KEYS,finishChapterWin,goJourney,nextBigTable,playEnding,playStory} from './scenes/flow';
 import {BootScene} from './scenes/boot';
 import {JourneyScene} from './scenes/journey';
 import {StoryScene} from './scenes/story';
 import {BUILD_TAG,CREDITS,NOT_IMPLEMENTED,RULES} from './ui/infoTexts';
-import {BASE_HEIGHT,CARD,type CapturedRects,DESIGN,FLOOR_STACK_TILT,HAND_ARROW,HOLD_LIFT,MARGIN,MAX_HEIGHT,REGIONS,type Rect,type FloorLayout,type SafeInsets,SKILL_BAR,TEXT_MIN,bagPopupLayout,capturedRects,configureLayout,floorLayout,handLayout,oppHandLayout,scoreBadgeRect,skillBarLayout,speechZone} from './ui/layout';
+import {BASE_HEIGHT,CARD,type CapturedRects,DESIGN,FLOOR_STACK_TILT,HAND_ARROW,HOLD_LIFT,MARGIN,MAX_HEIGHT,REGIONS,type Rect,type FloorLayout,type SafeInsets,LAYOUT,SKILL_BAR,TEXT_MIN,bagPopupLayout,skillRowsFor,capturedRects,configureLayout,floorLayout,handLayout,oppHandLayout,scoreBadgeRect,skillBarLayout,speechZone} from './ui/layout';
 import {COLORS,type UI,box,button,label} from './ui/widgets';
 import {drawCardFace,drawChanceCard} from './ui/cardView';
 import {type PlayerInfoView,drawCaptured,drawPlayerInfo} from './ui/panels';
@@ -57,7 +63,7 @@ const EVENT_BANNER:Record<TurnEvent,{style:BannerStyle;ms:number;size:number;sha
 };
 /** 선언 근거 요약: "1월 흔들기+폭탄, 3월 폭탄". */
 const declText=(d:Declared[])=>d.map(x=>`${x.month}월 ${x.kinds.join('+')}`).join(', ');
-type Phase='dealing'|'hand'|'swap'|'catch'|'choice'|'gukjin'|'gostop'|'busy'|'result'|'menu'|'credits'|'gallery'|'scenarios'|'capturedView'|'rules'|'devinfo';
+type Phase='dealing'|'hand'|'swap'|'catch'|'bet'|'choice'|'gukjin'|'gostop'|'busy'|'result'|'menu'|'credits'|'gallery'|'scenarios'|'capturedView'|'rules'|'devinfo';
 /** 플레이어(사람·컴퓨터)가 자기 턴에 고르는 행동. target: 같은 월 바닥패 2장 중 미리 고른 id(컴퓨터). */
 type Action={kind:'normal';index:number;shakeMonth?:number;target?:number}|{kind:'bomb';month:number}|{kind:'flip'};
 /** 바닥패 2장 중 고르기. 사람은 선택창, 컴퓨터는 공개된 카드(손패 또는 뒤집은 더미 패)와 공개 정보로 판단한다. */
@@ -123,6 +129,12 @@ class TableScene extends Phaser.Scene {
   skillUses:Partial<Record<SkillId,number>>={}; usedOrder:SkillId[]=[]; captureHistory:CaptureKind[][]=[]; learnerBlock=false;
   /** 아버지: 상대 차례 수(손패 읽기), 임시 접기 버튼(이 판만, 비용 0), 회중시계를 썼는지. */
   oppTurns=0; tempFold=false; foldTaught=false; watchUsed=false;
+  /** 아버지: 접기를 가르친 뒤 고를 부르지 않는 남은 차례. */
+  fatherHold=0;
+  /** 10장 구상만: 남은 봉쇄. 서린의 부적: 장착·사용 여부. */
+  blocksLeft=0; hasCharm=false; charmUsed=false;
+  /** 11장 백무진: 현재 단계, 1단계 봉쇄 대상(여정에서 많이 쓴 2개), 판돈 ×2 수락, 판돈 배수, 제안 대기. */
+  kingStage:KingStage=1; kingTop:SkillId[]=[]; betAccepted=false; betMult=1; betResolve?:(d:boolean)=>void;
   get names(){return [PLAYER.name,this.oppChar.name];}
   selectable:number[]=[]; peek=false;
   /** 대기 중인 선택의 resolve. 모달 버튼이 이것을 호출해 흐름을 이어간다. */
@@ -191,13 +203,20 @@ class TableScene extends Phaser.Scene {
     this.taeohAvail=!this.launch.scenario&&taeohAvailable(this.progress.chapterId,this.progress.flags);this.taeohUses=this.taeohAvail?1:0;
     this.watching=false;this.cheatsUsed=0;this.hasBuzz=this.gear.includes('buzzWatch');this.buzzUsed=false;this.catchResolve=undefined;this.catchTimer=undefined;
     this.skillUses={};this.usedOrder=[];this.captureHistory=[];this.learnerBlock=false;
-    this.oppTurns=0;this.tempFold=false;this.foldTaught=false;this.watchUsed=false;this.timerSec=undefined;
+    this.oppTurns=0;this.tempFold=false;this.foldTaught=false;this.watchUsed=false;this.timerSec=undefined;this.fatherHold=0;
+    this.blocksLeft=this.profile.blocks??0;this.hasCharm=this.gear.includes('serinCharm');this.charmUsed=false;
+    this.kingStage=this.launch.kingFinal?4:1;this.kingTop=topSkills(this.progress);this.betAccepted=false;this.betMult=1;this.betResolve=undefined;
+    // 기술 버튼이 5개(가방 제외)를 넘으면 기술 줄 두 줄: 배운 기술 + 태오 + (아버지 판에서 아직 접기를 안 배웠으면) 임시 접기. 판 시작 전에 한 번 정한다
+    const nBtns=this.skills.length+(this.taeohAvail?1:0)+(this.profile.teachesFold&&!this.skills.some(x=>x.id==='fold')?1:0);
+    configureLayout(DESIGN.height,LAYOUT.insets,skillRowsFor(nBtns));
     this.nearMissShown=this.progress.flags[NEAR_MISS_FLAG]===true;
     this.timerDeadline=0;this.timerKind=undefined;this.timerEvent=undefined;this.timerTick=-1;
     // 도발형 상대는 고/스톱 정책을 래퍼로 감싼다(도발에 응하면 공격적). 규칙 함수(canDecide/canGo)는 그대로.
     if(this.profile.taunt)this.opponent=provokedPolicy(this.opponent,()=>this.taunt.provoked);
     // 학습형(태오): 내가 3턴 연속 같은 분류를 먹으면 저지 강화(공개 정보만)
     if(this.profile.learner)this.opponent=learnerPolicy(this.opponent,()=>this.learnerBlock);
+    // 백무진 2단계: 판돈 ×2를 받으면 고 정책이 공격적(최대 2고)
+    if(this.profile.king)this.opponent=provokedPolicy(this.opponent,()=>this.betAccepted,KING.stage2MaxGo);
   }
   preload(){preloadCardAssets(this.load);preloadPortraits(this.load,[this.oppChar,PLAYER]);}
   create(){
@@ -229,11 +248,13 @@ class TableScene extends Phaser.Scene {
     if(this.scenarioKey)return `시나리오 · ${findScenario(this.scenarioKey)?.title??''}`;
     if(this.launch.practice)return `연습 대결 · ${this.oppChar.name}`;
     if(this.launch.errand)return `심부름 · ${errandById(this.launch.errand).title}`;
+    if(this.launch.gate)return `초대전 ${this.launch.gate} — ${this.oppChar.name}`;
+    if(this.profile.king)return this.launch.kingFinal?'왕이 없는 밤 · 추가 승부(4단계)':`왕이 없는 밤 · ${this.kingStage}단계`;
     if(this.launch.bigRound)return `큰 판 ${this.launch.bigRound}/2 · 1점 ${formatWon(this.launch.stake??0)}`;
     return this.chapter?chapterLabel(this.chapter):'자유 대결';
   }
   /** 이전 판의 트윈·배너·말풍선·예약 작업·소리·음성 예약을 모두 정리한다. 세대 번호를 올려 남은 비동기 처리가 새 판에 반영되지 않게 한다. */
-  teardown(){this.stopTurnTimer();this.catchTimer?.remove(false);this.catchResolve=undefined;this.gen++;this.fx.clear();this.slides.reset();this.killArrows();this.time.removeAllEvents();this.tweens.killAll();this.sfx.cancel();this.voice.cancel();this.choiceResolve=undefined;this.gukjinResolve=undefined;this.gostopResolve=undefined;this.resultTimer=undefined;this.moodTimer=undefined;}
+  teardown(){this.stopTurnTimer();this.catchTimer?.remove(false);this.catchResolve=undefined;this.betResolve=undefined;this.gen++;this.fx.clear();this.slides.reset();this.killArrows();this.time.removeAllEvents();this.tweens.killAll();this.sfx.cancel();this.voice.cancel();this.choiceResolve=undefined;this.gukjinResolve=undefined;this.gostopResolve=undefined;this.resultTimer=undefined;this.moodTimer=undefined;}
   /** 새 판(같은 장·상대·연습 여부, 시나리오는 지정한 것으로). 결과창 버튼이 여러 번 눌려도 한 번만 동작한다. */
   restart(scenario?:string){if(this.restarting)return;this.restarting=true;const next:TableLaunch={...this.launch,scenario};this.scene.restart(next);}
   /** "한 판 더": 시작 데이터 그대로(이야기 장면 반복 없음). */
@@ -247,7 +268,21 @@ class TableScene extends Phaser.Scene {
     if(nextRound){nextBigTable(this,this.launch,nextRound);return;}
     // 7장: 잡기로 이기면 원본/아니면 사본, 9장: 접었는지/이겼는지에 따라 after 앞 장면과 플래그가 다르다
     const r=this.state.result;
-    finishChapterWin(this,this.chapter,chapterWinVariant(this.chapter.id,{caught:r?.outcome==='승리'&&r.endKind==='caught',folded:r?.outcome==='승리'&&r.endKind==='fold'}));
+    const won=r?.outcome==='승리'&&r.winner===0, folded=r?.outcome==='승리'&&r.endKind==='fold';
+    finishChapterWin(this,this.chapter,chapterWinVariant(this.chapter.id,{caught:r?.outcome==='승리'&&r.endKind==='caught',folded,untaught:this.chapter.id==='ch9'&&!this.foldTaught,lost:!won&&!folded}));
+  }
+  /** 10장 초대전 승리: 다음 문이 열린다. 셋째(구상만)를 이기면 백무진 등장 장면 → 지도의 선택 창. */
+  finishGate(){
+    if(this.restarting||!this.launch.gate)return;this.restarting=true;
+    const n=this.launch.gate as GateNo;saveProgress(winGate(loadProgress(),n));
+    if(n<3){goJourney(this,{notice:{title:`초대전 ${n} 통과`,lines:[`${this.oppChar.name}을 넘었다. 다음 문지기가 기다린다. 쉬었다 가도 된다.`]}});return;}
+    playStory(this,'왕의 식탁',MUJIN_APPEAR,s=>goJourney(s,{kingChoice:true}));
+  }
+  /** 11장 승리: 본 판이면 after 장면("한 번 더.") → 마지막 선택, 추가 승부(4단계)면 엔딩 B. */
+  finishKing(extra:boolean){
+    if(this.restarting||!this.chapter)return;this.restarting=true;
+    if(extra){playEnding(this,'B');return;}
+    playStory(this,chapterLabel(this.chapter),this.chapter.scenes.after,s=>goJourney(s,{finalChoice:true}));
   }
   /** 8장 승리 뒤 선택: 받아들인다(9장부터 태오 버튼) / 자료만 받는다. */
   chooseCh8(accept:boolean){if(this.restarting||!this.chapter)return;this.restarting=true;finishChapterWin(this,this.chapter,ch8Choice(accept));}
@@ -276,7 +311,11 @@ class TableScene extends Phaser.Scene {
   /** 기술 비용: 캔커피 효과가 살아 있으면 첫 기술 −10. */
   skillCost(id:SkillId){if(id==='fold'&&this.tempFold)return 0;return skillCostWithBoost(SKILLS[id].cost,this.coffeeBoost);}
   /** 학습형 상대에게 읽혀 잠긴 기술(같은 기술 두 번 뒤). */
-  isRead(id:SkillId){return !!this.profile.learner&&isSkillRead(this.skillUses,id);}
+  isRead(id:SkillId){return (!!this.profile.learner&&isSkillRead(this.skillUses,id))||this.kingLocked(id);}
+  /** 백무진 단계별 봉쇄: 1단계 많이 쓴 2개, 4단계 정직 기술 전부. */
+  kingLocked(id:SkillId){return !!this.profile.king&&stageLocks(this.kingStage,this.kingTop).includes(id);}
+  /** 지금 상대의 속임수 설정(백무진은 단계별). */
+  get cheatSpec():CheatSpec|undefined{return this.profile.king?stageCheat(this.kingStage):this.profile.cheat;}
   canUseSkill(sk:{id:SkillId;uses:number}){
     if(this.phase!=='hand'||sk.uses<=0||!canSpendFocus(this.focus,this.skillCost(sk.id))||this.isRead(sk.id))return false;
     if(sk.id==='readThrough')return !this.watching;
@@ -294,6 +333,7 @@ class TableScene extends Phaser.Scene {
     // 바꿔치기는 패를 고른 뒤(doSwap) 비용을 치른다(취소하면 무료)
     if(id==='swap'){this.phase='swap';this.message='바꿀 패를 고르세요 (취소: 바꿔치기 버튼)';this.draw();return;}
     this.focus=spendFocus(this.focus,this.skillCost(id));sk.uses-=1;this.consumeCoffee();this.noteSkillUse(id);
+    if(this.blockSkill(id))return;
     if(id==='fold'){this.stopTurnTimer();this.state.forfeit(0,{kind:'fold'});this.showResult('불리한 판을 접었습니다.');return;}
     if(id==='readThrough'){this.watching=true;this.message=`${SKILLS.readThrough.name}: 다음 상대 차례를 지켜본다.`;}
     if(id==='eye'){
@@ -323,7 +363,24 @@ class TableScene extends Phaser.Scene {
   /** 기술 사용 기록(학습형 잠김·회중시계). 태오에게 두 번째로 쓴 순간 "그거 또 쓸 줄 알았어." */
   noteSkillUse(id:SkillId){
     this.skillUses={...this.skillUses,[id]:(this.skillUses[id]??0)+1};this.usedOrder.push(id);
+    // 여정 전체 기술 사용 기록(11장 1단계 봉쇄 대상)
+    if(!this.launch.scenario){const q=loadProgress();saveProgress({...q,counters:{...q.counters,[skillCounterKey(id)]:(q.counters[skillCounterKey(id)]??0)+1}});}
     if(this.profile.learner&&justRead(this.skillUses,id)){this.setMood('happy');this.fx.speech(TAEOH_READ,speechZone());}
+  }
+  /** 기술 줄 버튼 순서(그리기와 같다): 임시 접기 → 태오 → 배운 순서. */
+  buttonKeys():string[]{
+    const keys:string[]=this.skills.map(x=>x.id);
+    if(this.taeohAvail)keys.unshift('taeoh');
+    const fi=keys.indexOf('fold');if(this.tempFold&&fi>0)keys.unshift(...keys.splice(fi,1));
+    return keys;
+  }
+  /** 구상만 봉쇄: 남은 봉쇄가 있으면 이번 기술은 무효(집중력은 이미 소모). 막힌 기술 버튼에 X 300ms. */
+  blockSkill(id:SkillId):boolean{
+    const b=consumeBlock(this.blocksLeft);if(!b.blocked)return false;
+    this.blocksLeft=b.left;this.message=`${this.names[1]}이 막았다 (남은 봉쇄 ${this.blocksLeft})`;this.setMood('happy');this.draw();
+    const keys=this.buttonKeys(), r=skillBarLayout(REGIONS.skillBar,keys.length).buttons[keys.indexOf(id)];
+    if(r){const x=this.add.text(r.x+r.w/2,r.y+r.h/2,'✕',{fontFamily:'sans-serif',fontSize:40,color:'#e03a3a',fontStyle:'bold',stroke:'#000000',strokeThickness:4}).setOrigin(0.5).setDepth(60);this.time.delayedCall(300,()=>x.destroy());}
+    return true;
   }
   /** 낡은 회중시계(대결당 1회): 이번 판에 쓴 정직 기술 하나(가장 최근)의 남은 횟수 +1. 속임수·희귀 기술 제외. */
   useWatch(){
@@ -383,7 +440,7 @@ class TableScene extends Phaser.Scene {
     button(ui,DESIGN.width-MARGIN-90,4,90,'메뉴',()=>this.openMenu(),this.phase==='hand',32,TEXT_MIN);
     // 2~3. 상대: 큰 초상화·이름·점수·대사 자리·손패 뒷면(내용은 공개하지 않음), 획득 패
     const stable=this.phase==='hand';
-    const opp=drawPlayerInfo(ui,REGIONS.oppInfo,{character:this.oppChar,mood:this.mood,score:theirs,goCount:s.goCount[1],gukjin:s.gukjinUse(1),handCount:s.hands[1].length,flipChances:s.flipChances[1],active:this.phase==='busy'&&this.turnOwner===1,activeText:'상대 차례',ppeokCount:this.ppeokCount(1),declared:s.declaredMonths(1),big:true,first:false,handVisible:s.hands[1].map(c=>!this.hidden.has(c.id)),money:this.oppMoney()});
+    const opp=drawPlayerInfo(ui,REGIONS.oppInfo,{character:this.oppChar,mood:this.mood,score:theirs,goCount:s.goCount[1],gukjin:s.gukjinUse(1),handCount:s.hands[1].length,flipChances:s.flipChances[1],active:this.phase==='busy'&&this.turnOwner===1,activeText:'상대 차례',ppeokCount:this.ppeokCount(1),declared:s.declaredMonths(1),big:true,first:false,handVisible:s.hands[1].map(c=>!this.hidden.has(c.id)),money:this.oppMoney(),extraChips:this.profile.blocks?[{text:`봉쇄 ${this.blocksLeft}`,color:this.blocksLeft>0?0x6b7f8f:0x3a3a36}]:undefined});
     this.scoreTexts[1]=opp.scoreText;this.oppPortrait=opp.portrait;
     this.lastCaptured[1]=drawCaptured(ui,REGIONS.oppCaptured,theirs,{hidden:this.hidden,warnings:bakWarnings(s,1),onTap:stable?()=>this.openCapturedView(1):undefined,place});
     // 4. 화투판(가운데 더미는 뒷면, 뻑 묶음 표시)
@@ -405,10 +462,12 @@ class TableScene extends Phaser.Scene {
     const btns:Btn[]=this.skills.map(sk=>{
       const def=SKILLS[sk.id], cost=this.skillCost(sk.id);
       if(sk.id==='swap'&&this.phase==='swap')return {key:sk.id,name:'취소',badge:'',on:true,onTap:()=>this.cancelSwap(),fill:0xe0875a};
-      if(this.isRead(sk.id))return {key:sk.id,name:def.short,badge:'읽혔다',on:false,onTap:()=>undefined};
+      if(this.isRead(sk.id))return {key:sk.id,name:def.short,badge:this.kingLocked(sk.id)?'왕이 봤다':'읽혔다',on:false,onTap:()=>undefined};
       return {key:sk.id,name:def.short,badge:sk.uses>0?`${cost}${this.coffeeBoost?'*':''}·${sk.uses}`:'다 씀',on:this.canUseSkill(sk),onTap:()=>this.useSkill(sk.id),fill:sk.id==='fold'&&this.tempFold?0xffe08a:undefined};
     });
-    if(this.taeohAvail)btns.push({key:'taeoh',name:'태오',badge:this.taeohUses>0?'0·1':'다 씀',on:this.phase==='hand'&&this.taeohUses>0,onTap:()=>{void this.useTaeoh();},fill:0x8eb4e3});
+    if(this.taeohAvail)btns.unshift({key:'taeoh',name:'태오',badge:this.taeohUses>0?'0·1':'다 씀',on:this.phase==='hand'&&this.taeohUses>0,onTap:()=>{void this.useTaeoh();},fill:0x8eb4e3});
+    // 임시 접기는 윗줄 맨 앞(눈에 띄게)
+    const fi=btns.findIndex(b=>b.key==='fold');if(this.tempFold&&fi>0)btns.unshift(...btns.splice(fi,1));
     const sbL=skillBarLayout(REGIONS.skillBar,btns.length);
     btns.slice(0,sbL.buttons.length).forEach((b,i)=>{
       const r=sbL.buttons[i];
@@ -460,6 +519,12 @@ class TableScene extends Phaser.Scene {
   }
   drawModals(myBase:number,theirBase:number){
     const ui=this.ui, s=this.state;
+    if(this.phase==='bet'){
+      drawModal(ui,{title:MUJIN_BET,titleColor:COLORS.gold,edgeColor:0xb08d4a,alpha:.7,lines:[{text:'받으면 이 판 최종 점수가 두 배(누가 이기든). 백무진은 더 공격적으로 고를 부른다.',size:TEXT_MIN,color:COLORS.text},{text:'거절하면 도발 한 번. 태연한 얼굴로 막을 수 있다.',size:TEXT_MIN}],buttons:[
+        {text:'받는다 (×2)',onTap:()=>this.decideBet(true),fill:0xe0875a},
+        {text:'거절한다',onTap:()=>this.decideBet(false)},
+      ]});
+    }
     if(this.phase==='catch'){
       drawModal(ui,{title:'속임수다!',titleColor:'#e03a3a',edgeColor:0xc0392b,alpha:.6,lines:[{text:`${this.names[1]}의 손이 더미 윗장으로 간다. 지금 잡을까?`,size:20,color:COLORS.text},{text:'2.5초 안에 고르지 않으면 모른 척한다.',size:TEXT_MIN}],buttons:[
         {text:'잡는다',onTap:()=>this.decideCatch('catch'),fill:0xe03a3a},
@@ -556,13 +621,14 @@ class TableScene extends Phaser.Scene {
       {text:r.baks.length?`박: ${r.baks.map(b=>`${b} ×2`).join(' · ')}`:'박 없음',size:19,color:r.baks.length?COLORS.danger:COLORS.muted},
       {text:r.declared.length?`선언 배수: ${declText(r.declared)} ×${r.declMultiplier}`:'선언 배수 없음',size:19,color:r.declared.length?COLORS.danger:COLORS.muted},
       ...(mult>1?[{text:`미션 ×${mult}`,size:19,color:COLORS.gold,bold:true}]:[]),
+      ...(this.betMult>1?[{text:`판돈 ×${this.betMult}(백무진 제안 수락)`,size:19,color:COLORS.danger,bold:true}]:[]),
       {text:`최종 ${this.finalPoints(r)}점`,size:34,color:COLORS.gold,bold:true},
       ...(this.moneyDelta!==0?[{text:`판돈 정산 ${formatWonDelta(this.moneyDelta)}`,size:18,color:this.moneyDelta>0?COLORS.gold:COLORS.danger,bold:true}]:[])];
   }
   /** 미션 배수: 내가 이겼고 미션 카드를 전부 가졌을 때만(나가리 무효). */
   missionMult(){const r=this.state.result;if(!r||r.outcome!=='승리'||r.winner!==0)return 1;return missionMultiplier(this.mission,this.mission?missionDone(this.mission,new Set(this.state.captured[0].map(c=>c.id))):false,'승리');}
   /** 최종 점수(미션 반영). 돈도 이 점수로 정산한다. */
-  finalPoints(r:NonNullable<GameState['result']>){return r.outcome==='승리'?r.final*this.missionMult():0;}
+  finalPoints(r:NonNullable<GameState['result']>){return r.outcome==='승리'?r.final*this.missionMult()*this.betMult:0;}
   /** 상대 소지금(표시용): 프로필 값, 일반 상대는 내 소지금의 1.5배. 0이면 표시하지 않는다. */
   oppMoney():number|undefined{const m=this.profile.money??(this.profile.id==='stranger'?Math.round(this.progress.money*1.5):undefined);return m&&m>0?m:undefined;}
   /** 결과창 버튼: 시나리오 [새 판 시작/지도로], 연습 [한 판 더/지도로], 장 대결은 승리 [계속] · 패배·나가리 [한 판 더/지도로](1장은 패배 비용 없음). */
@@ -573,7 +639,11 @@ class TableScene extends Phaser.Scene {
     const r=this.state.result, folded=r?.outcome==='승리'&&r.endKind==='fold';
     if(this.chapter?.id==='ch8'&&!this.launch.practice&&won)return [{text:'받아들인다',onTap:()=>this.chooseCh8(true)},{text:'자료만 받는다',onTap:()=>this.chooseCh8(false)}];
     // 9장은 접어도 완료(접기를 배우는 판)
-    if(this.chapter?.id==='ch9'&&!this.launch.practice&&(won||folded))return [{text:'계속',onTap:()=>this.continueChapter()}];
+    // 9장: 접어도 이겨도 완료. 판에서 가르칠 순간이 한 번도 안 왔으면 져도 완료(after 앞에서 가르친다)
+    if(this.chapter?.id==='ch9'&&!this.launch.practice&&(won||folded||!this.foldTaught))return [{text:'계속',onTap:()=>this.continueChapter()}];
+    if(this.launch.gate&&won)return [{text:'계속',onTap:()=>this.finishGate()}];
+    if(this.profile.king&&this.launch.kingFinal&&won)return [{text:'계속',onTap:()=>this.finishKing(true)}];
+    if(this.profile.king&&won)return [{text:'계속',onTap:()=>this.finishKing(false)}];
     if(this.chapter&&!this.launch.practice&&won)return [{text:'계속',onTap:()=>this.continueChapter()}];
     return [{text:'한 판 더',onTap:()=>this.again()},{text:'지도로',onTap:()=>this.toJourney()}];
   }
@@ -627,7 +697,7 @@ class TableScene extends Phaser.Scene {
    * 시드는 판 ID와 시각으로 만들어 판마다 다르다(미션은 AI가 모르는 플레이어만의 목표).
    */
   rollMission(){
-    if(this.launch.scenario||this.launch.practice||this.profile.id==='barber'||this.profile.id==='father'){this.mission=null;return;}
+    if(this.launch.scenario||this.launch.practice||this.launch.kingFinal||this.profile.id==='barber'||this.profile.id==='father'){this.mission=null;return;}
     const no=this.chapter?.no??chapterById(this.progress.chapterId).no;
     this.mission=drawMission(seededRng(((this.state.roundId*7919)^Date.now())>>>0),new Set(this.state.hands[0].map(c=>c.id)),Math.max(1,no));
     this.missionHit=false;
@@ -655,6 +725,9 @@ class TableScene extends Phaser.Scene {
     this.setMood('surprised');
     if(isNearMiss(this.chapter?.id==='ch6',before,this.suspicion,this.nearMissShown))this.nearMiss();
     else if(crossesWarn(before,this.suspicion)&&!this.warned){this.warned=true;const lines=SUSPICION_WARNINGS[this.profile.id]??SUSPICION_WARNINGS.DEFAULT;this.fx.speech(lines[pickIndexSafe(this.aiRng,lines.length)],speechZone());}
+    // 서린의 부적(판당 1회): 100에 닿는 순간 70으로
+    const ch=applyCharm(this.suspicion,this.hasCharm,this.charmUsed);
+    if(ch.saved){this.suspicion=ch.value;this.charmUsed=true;this.message=`서린의 부적이 손을 감쌌다 — 의심 ${this.suspicion}`;this.draw();return false;}
     if(!isBusted(this.suspicion))return false;
     await this.bust();return gen!==this.gen||true;
   }
@@ -710,6 +783,7 @@ class TableScene extends Phaser.Scene {
     if(!sk||sk.uses<=0||!canSpendFocus(this.focus,this.skillCost('swap'))||s.deck.length===0){this.cancelSwap();return;}
     this.phase='busy';
     this.focus=spendFocus(this.focus,this.skillCost('swap'));sk.uses-=1;this.consumeCoffee();this.noteSkillUse('swap');
+    if(this.blockSkill('swap')){this.phase='hand';this.draw();return;}
     const coin=this.coinBoost;if(coin){this.coinBoost=false;if(!this.launch.scenario)saveProgress(setFlag(loadProgress(),FLAGS.coinBoost,false));}
     const ok=this.aiRng()<swapSuccessRate(coin);
     if(ok){
@@ -794,6 +868,39 @@ class TableScene extends Phaser.Scene {
       if(left<=0)this.onTimerExpire(kind);
     }});
   }
+  // ---- 11장 백무진 단계 ----
+  /**
+   * 단계 전환(한 판 안에서 상대 프로필 교체): 1→2 더미 ≤ 14 또는 내 기본 ≥ 5, 2→3 더미 ≤ 6 또는 무진 기본 ≥ 5. 매 차례 끝(내 차례 뒤·무진 차례 뒤)에 확인한다.
+   * 단계가 오를 때마다 컷인 한 장(0.8초). 2단계: 판돈 ×2 제안 창(받으면 최종 ×2 + 공격적 고, 거절하면 도발 1회), 봉쇄 해제. 3단계: '!' + "손끝이 멈췄다", 속임수 활성.
+   */
+  async checkKingStage(){
+    if(!this.profile.king||this.launch.kingFinal||this.state.over)return;
+    const s=this.state, gen=this.gen;
+    const target=nextKingStage(this.kingStage,s.deck.length,s.baseScore(0),s.baseScore(1));
+    while(this.kingStage<target){
+      this.kingStage=(this.kingStage+1) as KingStage;this.draw();
+      const cut=stageCutIn(this.kingStage,this.progress.flags['taeoh.accepted']===true);
+      if(cut){await this.cutIn(cut);if(gen!==this.gen)return;}
+      if(this.kingStage===2){
+        this.fx.speech(MUJIN_BET,speechZone());
+        const ok=await this.askBet();if(gen!==this.gen)return;
+        if(ok){this.betAccepted=true;this.betMult=KING.betMultiplier;this.message='판돈 ×2. 백무진이 웃는다.';}
+        else if(!this.taunt.calmed){this.fx.speech(MUJIN_TAUNT,speechZone());this.message='거절했다.';}
+        else this.message='거절했다. 도발에 흔들리지 않는다.';
+      }
+      if(this.kingStage===3){this.setMood('surprised');this.message=KING_HAND_SIGN;}
+      this.draw();
+    }
+  }
+  /** 컷인 한 장: 화면 아래 대화창만, 0.8초 뒤 자동으로 사라진다(입력 없음). */
+  cutIn(text:string){return new Promise<void>(res=>{
+    const w=680,h=110,x=(DESIGN.width-w)/2,y=DESIGN.height-h-40;
+    const bg=this.add.rectangle(x,y,w,h,0x101410,0.92).setOrigin(0).setStrokeStyle(2,0xb08d4a).setDepth(950);
+    const tx=this.add.text(x+24,y+h/2,text,{fontFamily:'"NanumGothic", sans-serif',fontSize:24,color:COLORS.text,wordWrap:{width:w-48}}).setOrigin(0,0.5).setDepth(951);
+    this.time.delayedCall(this.fxSettings.ms(CUT_IN_MS)*(this.fxSettings.reduced?2:1),()=>{bg.destroy();tx.destroy();res();});
+  });}
+  askBet(){return new Promise<boolean>(res=>{this.betResolve=res;this.stopTurnTimer();this.phase='bet';this.draw();});}
+  decideBet(ok:boolean){if(this.phase!=='bet')return;const r=this.betResolve;this.betResolve=undefined;this.phase='busy';this.draw();r?.(ok);}
   /** 잡기 창: 2.5초 안에 [잡는다]/[모른 척한다], 시간 초과는 모른 척. */
   askCatch(){return new Promise<'catch'|'ignore'>(res=>{
     this.catchResolve=res;this.phase='catch';this.draw();
@@ -816,11 +923,11 @@ class TableScene extends Phaser.Scene {
   checkTeachFold(){
     if(!this.profile.teachesFold||this.state.over)return;
     const learned=this.skills.some(x=>x.id==='fold');
-    if(!shouldTeachFold(learned,this.state.baseScore(1),this.state.baseScore(0),this.foldTaught))return;
-    this.foldTaught=true;this.tempFold=true;this.skills.push({id:'fold',uses:1});
+    if(!shouldTeachFold(learned,this.state.baseScore(1),this.state.baseScore(0),this.foldTaught,this.state.goCount[1]))return;
+    this.foldTaught=true;this.tempFold=true;this.fatherHold=TEACH_FOLD.holdTurns;this.skills.push({id:'fold',uses:1});
     this.fx.speech(FATHER_TEACH_FOLD,speechZone());
     this.draw();
-    const idx=this.skills.findIndex(x=>x.id==='fold'), lay=skillBarLayout(REGIONS.skillBar,this.skills.length+(this.taeohAvail?1:0));
+    const keys=this.buttonKeys(), idx=keys.indexOf('fold'), lay=skillBarLayout(REGIONS.skillBar,keys.length); // 임시 접기는 맨 앞
     const rect=lay.buttons[idx];if(rect)void this.fx.highlight([rect],this.fxSettings.ms(600),0xffe08a);
   }
   /** 내 차례에 먹은 분류 기록(학습형): 3턴 연속 같은 분류면 태오가 저지를 강화한다. */
@@ -1104,6 +1211,7 @@ class TableScene extends Phaser.Scene {
     const plan=await this.runTurn(0,action,(cands,card)=>this.askChoice(cands.map(c=>c.id),`${card.month}월: 가져올 바닥패를 선택하세요.`));
     if(!plan||gen!==this.gen)return;
     this.noteCaptures(plan);this.checkTeachFold();
+    await this.checkKingStage();if(gen!==this.gen||s.over)return;
     // 10) 고/스톱: 카드·피 이동과 점수 갱신이 끝난 최종 상태로 판단
     if(s.over)return;
     if(s.canDecide(0)){
@@ -1137,8 +1245,11 @@ class TableScene extends Phaser.Scene {
     this.phase='busy';this.turnOwner=1;this.message=`${this.names[1]}이 패를 고르고 있습니다…`;this.draw();
     // 역정보형(복희): 차례 시작 때 bluff 확률로 실제 상태(상대 기본 점수)의 반대를 말한다. 시선 돌리기 뒤의 다음 말풍선 하나에는 (거짓)/(참)
     // 시선 돌리기를 쓴 턴(ignoreBluffThisTurn)에는 말풍선을 그대로 보여 주되 (거짓)/(참)을 붙여 꿰뚫어 본다
-    if(this.profile.bluff){
-      const l=pickBluff(this.aiRng,this.profile.bluff,s.baseScore(1),BOKHEE_BLUFF);
+    // 차유라: 가짜 흔들기 예고(말풍선 + 종소리만, 실제 선언 없음 → 규칙 상태 그대로). 시선 돌리기를 쓴 판이면 "(거짓)"
+    if(fakeShake(this.aiRng,this.profile.fakeShake)){
+      this.sfx.play('bell');this.fx.speech(markBluff({text:FAKE_SHAKE_LINE,truthful:false},this.revealBluff||this.ignoreBluffThisTurn||this.usedOrder.includes('lookAway')),speechZone());
+    }else if(this.profile.bluff){
+      const l=pickBluff(this.aiRng,this.profile.bluff,s.baseScore(1),this.profile.bluffLines??BOKHEE_BLUFF);
       this.fx.speech(markBluff(l,this.revealBluff||this.ignoreBluffThisTurn),speechZone());this.revealBluff=false;
     }
     await sleep(this,this.fxSettings.ms(this.profile.thinkMs));if(gen!==this.gen)return;
@@ -1148,7 +1259,7 @@ class TableScene extends Phaser.Scene {
     // 상대 속임수(뱀눈): 차례 시작에 rng로 정하고, 바닥과 맞지 않는 손패 1장을 더미 윗장과 바꾼다(공개 정보만으로 고름).
     // 간파로 지켜보는 중이면 실행 직전 잡기 창(2.5초), 아니면 진동 손목시계 경고(판당 1회). 그 뒤 평소대로 행동한다.
     let cheated=false;
-    if(s.remainingActions(1)>0&&s.deck.length>0&&decideCheat(this.aiRng,this.profile.cheat,this.cheatsUsed)){
+    if(s.remainingActions(1)>0&&s.deck.length>0&&decideCheat(this.aiRng,this.cheatSpec,this.cheatsUsed)){
       const card=pickCheatCard(publicView(s,1));
       if(card){
         cheated=true;this.cheatsUsed+=1;
@@ -1177,7 +1288,10 @@ class TableScene extends Phaser.Scene {
       this.aiActions+=1;
     }else{s.turn+=1;} // 행동이 없으면 차례를 넘긴다
     if(s.over)return;
-    if(s.canDecide(1)){
+    // 아버지: 접기를 가르친 뒤 1턴은 고/스톱을 부르지 않는다(플레이어가 접을 시간). 마지막 행동이면 규칙대로 스톱
+    const holding=this.fatherHold>0&&s.canGo(1);if(this.fatherHold>0)this.fatherHold-=1;
+    if(s.canDecide(1)&&holding)this.message=`${this.names[1]}이 패를 내려다본다.`;
+    else if(s.canDecide(1)){
       if(!s.canGo(1)){s.declareStop(1);this.showResult(`${this.names[1]}이 마지막 행동이라 스톱했습니다.`);return;}
       const d=this.opponent.decideGoStop(publicView(s,1));aiLog(d.decision==='go'?'고':'스톱',d.reason);
       if(d.decision==='stop'){s.declareStop(1);this.showResult(`${this.names[1]}이 스톱했습니다.`);return;}
@@ -1188,6 +1302,7 @@ class TableScene extends Phaser.Scene {
     if(s.remainingActions(0)===0){s.turn+=1;await this.runOpponentTurn();return;} // 내 행동이 없으면 상대가 이어서 진행
     this.ignoreBluffThisTurn=false; // 시선 돌리기는 '이번 턴'까지
     this.checkTeachFold();
+    await this.checkKingStage();if(gen!==this.gen||s.over)return;
     this.phase='hand';this.turnOwner=0;this.message='내 차례입니다. 손패나 기회 패를 누르세요.';this.draw();
     this.startTurnTimer('hand');
   }

@@ -118,9 +118,10 @@ test('아버지: 7점이면 3고까지, 손패 읽기는 내 실제 손패의 �
   }
   assert.equal(fatherRead([], seededRng(1), FATHER_READ), null);
   assert.equal(FATHER_READ[0], '넌 지금 {m}월 들고 뻑 기다리지.');
-  assert.ok(shouldTeachFold(false, 5, 3, false));
+  assert.ok(shouldTeachFold(false, 5, 3, false, 0) && shouldTeachFold(false, 6, 3, false, 0));
   assert.ok(!shouldTeachFold(true, 5, 3, false), '이미 배웠으면 없음');
   assert.ok(!shouldTeachFold(false, 4, 3, false) && !shouldTeachFold(false, 5, 5, false) && !shouldTeachFold(false, 6, 3, true), '그 판 한 번만');
+  assert.ok(!shouldTeachFold(false, 8, 3, false, 1) && !shouldTeachFold(false, 6, 3, false, 1) && !shouldTeachFold(false, 7, 3, false, 0), '아버지가 고 중이거나 7점 이상이면 가르치지 않는다(접기를 못 쓰므로)');
 });
 
 test('9장 완료: 접기·승리 모두 완료, 접기 정식 습득·집중력 140·자료 플래그, 10장은 준비 중', () => {
@@ -128,7 +129,7 @@ test('9장 완료: 접기·승리 모두 완료, 접기 정식 습득·집중력
   assert.deepEqual(chapterWinVariant('ch9', { folded: false }).prefix, CH9_WIN);
   const p = completeChapter({ ...initialProgress(), chapterId: 'ch9' }, chapterById('ch9'));
   assert.ok(p.skills.includes('fold') && p.focusMax === 140 && p.flags['ch9.files'] && p.chapterId === 'ch10');
-  assert.ok(!isChapterImplemented('ch10'));
+  assert.ok(!isChapterImplemented('epilogue'), '에필로그는 엔딩 장면으로만 재생');
 });
 
 test('회중시계: 정직·비희귀 기술만, 쓴 순서의 가장 최근 것, 남은 횟수가 최대면 건너뜀', () => {

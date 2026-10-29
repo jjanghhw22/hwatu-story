@@ -46,9 +46,13 @@ export function fatherRead(myHand: readonly Card[], rng: Rng, templates: readonl
   const month = myHand[pickIndex(rng, myHand.length)].month;
   return { text: templates[pickIndex(rng, templates.length)].replace('{m}', String(month)), month };
 }
-/** 접기 가르치기: 아직 접기를 안 배웠고, 아버지 기본 점수 ≥ 5이고 내 점수가 더 낮은 첫 순간. */
-export function shouldTeachFold(learned: boolean, fatherBase: number, myBase: number, shown: boolean): boolean {
-  return !learned && !shown && fatherBase >= 5 && myBase < fatherBase;
+/**
+ * 접기 가르치기: 아직 접기를 안 배웠고, 아버지 기본 점수 5~6이고 아버지가 아직 고를 부르지 않았으며(접기는 상대가 고 중이면 못 쓴다) 내 점수가 더 낮은 첫 순간.
+ * 아버지는 7점에서 바로 고를 부르므로 7점 이상은 제외한다.
+ */
+export const TEACH_FOLD = { minBase: 5, maxBase: 6, holdTurns: 1 } as const;
+export function shouldTeachFold(learned: boolean, fatherBase: number, myBase: number, shown: boolean, fatherGo = 0): boolean {
+  return !learned && !shown && fatherGo === 0 && fatherBase >= TEACH_FOLD.minBase && fatherBase <= TEACH_FOLD.maxBase && myBase < fatherBase;
 }
 /** 접기 사용 조건: 판 진행 중, 내 차례, 상대가 고를 선언하지 않았을 때. */
 export function canFold(s: GameState): boolean { return !s.over && s.currentPlayer === 0 && s.goCount[1] === 0; }

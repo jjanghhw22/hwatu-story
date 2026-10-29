@@ -28,6 +28,8 @@ export type PlayerInfo = {
   suspicion?: number;
   /** 상대 패널: 소지금(원, 표시용). */
   money?: number;
+  /** 추가 칩(구상만 "봉쇄 N" 등). */
+  extraChips?: StatusChip[];
 };
 
 export type StatusChip = { text: string; color: number; alpha?: number };
@@ -93,7 +95,7 @@ export function drawPlayerInfo(ui: UI, reg: Rect, p: PlayerInfo): PlayerInfoView
   const scoreText = label(ui, sb.x + sb.w - 10 - unit.width - 3, sb.y + sb.h / 2, String(p.score.total), 26, COLORS.gold, 80, [1, 0.5], true);
   const act = activeBoxRect(reg, p.big);
   // 아이콘 3개(고·흔·폭) + 나머지 칩(뒤집기·국진·뻑)
-  const chips = statusChips(p).slice(1).filter(c => !c.text.startsWith('흔들기') && !c.text.startsWith('폭탄'));
+  const chips = [...(p.extraChips ?? []), ...statusChips(p).slice(1).filter(c => !c.text.startsWith('흔들기') && !c.text.startsWith('폭탄'))];
   const widths = chips.map(c => measureText(ui.scene, c.text, INFO.chip.size, true));
   if (p.big) {
     const iconY = reg.y + reg.h - 6 - COUNT_ICON.d;
