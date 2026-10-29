@@ -26,7 +26,7 @@ export type Skill = {
 export const SKILLS: Record<SkillId, Skill> = {
   eye: { id: 'eye', name: '눈썰미', short: '눈썰미', cost: 20, suspicion: 0, kind: 'honest', desc: '더미 윗장 1장 보기(강화 시 2장, 판당 2회)', source: '1장 대식', usesPerMatch: 2 },
   calmFace: { id: 'calmFace', name: '태연한 얼굴', short: '태연', cost: 25, suspicion: 0, kind: 'honest', desc: '의심도 −30, 다음 상대 도발 1회 무효', source: '3장 마 사장', usesPerMatch: 1 },
-  lookAway: { id: 'lookAway', name: '시선 돌리기', short: '시선', cost: 20, suspicion: 0, kind: 'honest', desc: '상대 말풍선의 역정보를 이번 턴 무시(상대 손패 장수별 월 분포 힌트 1회)', source: '4장 복희', usesPerMatch: 1 },
+  lookAway: { id: 'lookAway', name: '시선 돌리기', short: '시선', cost: 20, suspicion: 0, kind: 'honest', desc: '상대 손패의 월 3개 힌트 + 이번 턴 상대 역정보 무시 + 이 판의 다음 상대 말풍선에 (거짓)/(참) 표시', source: '4장 복희', usesPerMatch: 1 },
   swap: { id: 'swap', name: '바꿔치기', short: '바꿔', cost: 35, suspicion: 25, kind: 'cheat', desc: '내 손패 1장을 더미 윗장과 교환. 성공률 70%(행운의 동전으로 상승), 실패 시 의심도 +40', source: '5장 태오', usesPerMatch: 1 },
   readThrough: { id: 'readThrough', name: '간파', short: '간파', cost: 15, suspicion: 0, kind: 'honest', desc: '상대가 이번 턴 기술을 준비 중인지 표시. 속임수면 "잡기" 선택 가능(상대 들통)', source: '7장 서린 인맥', usesPerMatch: 1 },
   fold: { id: 'fold', name: '접기', short: '접기', cost: 30, suspicion: 0, kind: 'honest', desc: '고/스톱 창에서 세 번째 선택 "접기": 그 판을 상대 기본 점수 × 1(박·배수 없음)로 끝낸다. 상대가 고 중이면 못 쓴다', source: '9장 아버지', usesPerMatch: 1 },

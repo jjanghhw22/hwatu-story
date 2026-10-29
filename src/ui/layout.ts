@@ -9,6 +9,9 @@ export type Rect = { x: number; y: number; w: number; h: number; angle?: number 
 export const DESIGN = { width: 720, height: 1280 };
 export const BASE_HEIGHT = 1280, MAX_HEIGHT = 1600;
 export const MARGIN = 20;
+/** 대결 화면 글자 최소 크기(디자인 px). 디자인 폭 720이 휴대폰(360pt)에서 절반이 되므로 18 = 실제 9pt. 숫자·버튼은 TEXT_NUM 이상. */
+export const TEXT_MIN = 18;
+export const TEXT_NUM = 20;
 export const GAP = 10;
 /** 화면 아래 기본 안전 여백. 손패가 화면 끝에 붙지 않게 한다(기기 홈바 여백은 configureLayout의 insets.bottom으로 더해진다). */
 export const BOTTOM_SAFE = 20;
@@ -34,11 +37,14 @@ export const CARD = {
 export const HAND_TOP_PAD = 24;
 /** 획득 패 패널 높이(한 줄 4묶음). */
 export const CAPTURED_H = 84;
-const TOP_H = 40, OPP_INFO_H = 84, MY_INFO_H = 64;
-/** 기술 줄(내 정보 아래): 배운 기술 버튼(폭 140, 최대 4개)과 가방 버튼. 공개한 더미 패(높이 40)도 여기에 보인다. */
-export const SKILL_BAR_H = 40;
-/** 1280 기준 화투판 높이(488). 긴 화면에서는 늘어난 높이의 70%가 더해진다. */
+/** 내 정보 76: 이름 줄 + 집중 줄 + 의심 줄(글자 18). */
+const TOP_H = 40, OPP_INFO_H = 84, MY_INFO_H = 76;
+/** 기술 줄(내 정보 아래): 기술 버튼(최대 5개) + 맨 오른쪽 가방 버튼. 버튼 높이 44, 이름 18. */
+export const SKILL_BAR_H = 52;
+/** 1280 기준 화투판 높이(464). 글자를 키우며 내 정보·기술 줄이 24 늘어난 만큼 1280에서는 화투판이 줄어든다. */
 export const TABLE_H_BASE = BASE_HEIGHT - TOP_H - OPP_INFO_H - CAPTURED_H - MY_INFO_H - SKILL_BAR_H - CAPTURED_H - (HAND_TOP_PAD + CARD.hand.h * 2 + GAP + BOTTOM_SAFE);
+/** v0.21까지의 화투판 기준 높이. 긴 화면에서는 손패 위 여백 몫에서 먼저 이만큼을 화투판에 돌려준다. */
+export const TABLE_H_NOMINAL = 488;
 /** 늘어난 높이의 배분 비율: 화투판 70%, 손패 위 여백 30%. */
 export const EXTRA_SPLIT = { table: 0.7, handPad: 0.3 } as const;
 
@@ -74,8 +80,11 @@ export function configureLayout(height: number, insets: SafeInsets = { top: 0, b
   const top = Math.max(0, Math.round(insets.top)), bottom = Math.max(0, Math.round(insets.bottom));
   DESIGN.height = Math.round(height);
   const extra = DESIGN.height - BASE_HEIGHT - top - bottom;
-  const tableExtra = extra >= 0 ? Math.round(extra * EXTRA_SPLIT.table) : extra;
-  const padExtra = extra >= 0 ? extra - tableExtra : 0;
+  let tableExtra = extra >= 0 ? Math.round(extra * EXTRA_SPLIT.table) : extra;
+  let padExtra = extra >= 0 ? extra - tableExtra : 0;
+  // 글자 키우기로 줄어든 화투판 몫은 손패 위 여백(30%)에서 먼저 돌려받는다
+  const giveBack = Math.min(padExtra, TABLE_H_NOMINAL - TABLE_H_BASE);
+  padExtra -= giveBack; tableExtra += giveBack;
   LAYOUT.insets = { top, bottom };
   LAYOUT.extra = extra;
   LAYOUT.handTopPad = HAND_TOP_PAD + padExtra;
@@ -105,9 +114,11 @@ export const HOLD_LIFT = 0.35;
 export const INFO = {
   portraitBig: 36, portraitSmall: 24,
   scoreBadge: { w: 96, h: 40 },
-  chip: { h: 20, pad: 14, gap: 6, rowGap: 4, size: 12, radius: 6 },
+  chip: { h: 24, pad: 14, gap: 6, rowGap: 4, size: 18, radius: 6 },
   firstBadge: { d: 22, color: 0xc0392b },
-  activeBox: { w: 96, h: 26 },
+  activeBox: { w: 116, h: 30, size: 18 },
+  /** 이름 글자. */
+  nameSize: 18,
   peekW: 140,
   oppHand: { h: 32, step: 9 },
   /** 왼쪽 구역(초상화·이름·칩)과 오른쪽 구역(점수 배지, 상대는 말풍선·손패 뒷면)을 나누는 x. */
@@ -126,39 +137,47 @@ export function scoreBadgeRect(reg: Rect, big: boolean): Rect {
 /** 차례 상자("내 차례"/"상대 차례"/"바닥패 선택"). 상대는 오른쪽 구역 왼쪽 아래, 나는 점수 배지 왼쪽(기술 버튼은 아래 기술 줄로 옮겼다). */
 export function activeBoxRect(reg: Rect, big: boolean): Rect {
   const { w, h } = INFO.activeBox;
-  if (big) return { x: INFO.split, y: reg.y + reg.h - 36, w, h };
-  return { x: scoreBadgeRect(reg, false).x - 10 - w, y: reg.y + Math.round(reg.h / 2) - 13, w, h };
+  if (big) return { x: INFO.split, y: reg.y + reg.h - 4 - h, w, h };
+  return { x: scoreBadgeRect(reg, false).x - 10 - w, y: reg.y + Math.round((reg.h - h) / 2), w, h };
 }
 /**
- * 기술 줄: 기술 버튼(폭 최대 140, 높이 32, 간격 6)을 왼쪽부터 최대 4개, 작은 장비 버튼(폭 64)은 가방 버튼 왼쪽, 가방 버튼(폭 90)은 오른쪽 끝.
- * 장비 버튼이 있어 자리가 모자라면 기술 버튼 폭을 줄인다(최소 96). 공개한 더미 패(1~2장)는 마지막 기술 버튼 오른쪽에 두되, 자리가 없으면 화투판 오른쪽 아래 구석.
+ * 기술 줄(높이 52): 기술 버튼(높이 44, 폭 최대 140)을 왼쪽부터 최대 5개, 가방 버튼(폭 96)은 오른쪽 끝. 이름은 18, 비용·남은 횟수는 버튼 오른쪽 위 작은 배지(14).
+ * 장비(마스크·투시경)와 소모품(사탕)은 가방 버튼을 누르면 기술 줄 위로 펼쳐지는 팝업에 들어간다. 공개한 더미 패(1~2장)는 버튼 오른쪽에 자리가 있으면 거기, 없으면 화투판 오른쪽 아래 구석.
  */
-export const SKILL_BAR = { btnW: INFO.peekW, btnMinW: 96, btnH: 32, gap: 6, bagW: 90, gearW: 64, maxSkills: 4 } as const; // 4×140 + 3×6 = 578 → 20..598, 가방 610..700
-export type SkillBarLayout = { buttons: Rect[]; gear: Rect[]; bag: Rect; preview: Rect; /** 공개 패 2장일 때 둘째 장 자리. */ preview2: Rect; /** 공개 패가 기술 줄 안에 들어가는지(아니면 화투판 구석). */ previewInBar: boolean };
-export function skillBarLayout(reg: Rect, nSkills: number, nGear = 0): SkillBarLayout {
-  const { btnH, gap, bagW, gearW } = SKILL_BAR;
+export const SKILL_BAR = { btnW: INFO.peekW, btnH: 44, gap: 6, bagW: 96, maxButtons: 5, textSize: TEXT_MIN, badgeSize: 14, popupItemW: 128, popupH: 60 } as const;
+export type SkillBarLayout = { buttons: Rect[]; bag: Rect; preview: Rect; /** 공개 패 2장일 때 둘째 장 자리. */ preview2: Rect; /** 공개 패가 기술 줄 안에 들어가는지(아니면 화투판 구석). */ previewInBar: boolean };
+export function skillBarLayout(reg: Rect, nButtons: number): SkillBarLayout {
+  const { btnH, gap, bagW } = SKILL_BAR;
   const y = reg.y + Math.round((reg.h - btnH) / 2);
-  const n = Math.min(nSkills, SKILL_BAR.maxSkills);
+  const n = Math.min(nButtons, SKILL_BAR.maxButtons);
   const bag = { x: reg.w - MARGIN - bagW, y, w: bagW, h: btnH };
-  const gear = Array.from({ length: nGear }, (_, i) => ({ x: bag.x - (i + 1) * (gearW + gap), y, w: gearW, h: btnH }));
-  const rightLimit = nGear ? gear[nGear - 1].x - gap : bag.x - gap;
-  const btnW = n ? Math.max(SKILL_BAR.btnMinW, Math.min(SKILL_BAR.btnW, Math.floor((rightLimit - MARGIN - (n - 1) * gap) / n))) : SKILL_BAR.btnW;
+  const rightLimit = bag.x - gap;
+  const btnW = n ? Math.min(SKILL_BAR.btnW, Math.floor((rightLimit - MARGIN - (n - 1) * gap) / n)) : SKILL_BAR.btnW;
   const buttons = Array.from({ length: n }, (_, i) => ({ x: MARGIN + i * (btnW + gap), y, w: btnW, h: btnH }));
   const px = MARGIN + n * (btnW + gap), pw = CARD.peek.w, ph = CARD.peek.h;
   const previewInBar = px + pw * 2 + 4 <= rightLimit;
   const t = REGIONS.table;
   const preview = previewInBar ? { x: px, y: reg.y + Math.round((reg.h - ph) / 2), w: pw, h: ph } : { x: t.x + t.w - 12 - pw * 2 - 4, y: t.y + t.h - 12 - ph, w: pw, h: ph };
-  return { buttons, gear, bag, preview, preview2: { ...preview, x: preview.x + pw + 4 }, previewInBar };
+  return { buttons, bag, preview, preview2: { ...preview, x: preview.x + pw + 4 }, previewInBar };
+}
+/** 가방 팝업: 기술 줄 바로 위, 오른쪽 맞춤. 항목 n개(최소 1칸: "비었음")를 가로로. */
+export function bagPopupLayout(reg: Rect, nItems: number): { panel: Rect; items: Rect[] } {
+  const { popupItemW: iw, popupH: h, gap } = SKILL_BAR;
+  const n = Math.max(1, nItems), w = n * iw + (n + 1) * gap;
+  const panel = { x: reg.w - MARGIN - w, y: reg.y - h - 4, w, h };
+  const items = Array.from({ length: nItems }, (_, i) => ({ x: panel.x + gap + i * (iw + gap), y: panel.y + 8, w: iw, h: h - 16 }));
+  return { panel, items };
 }
 
 // ---- 의심도 바(내 정보 패널, 집중력 바 오른쪽) ----
-/** 붉은 눈 모양 바: 가로 120. 속임수 기술·투시경이 없으면 그리지 않는다. */
-export const SUSPICION_BAR = { w: 120, h: 10, fill: 0xc0392b, track: 0x1a0f10, labelW: 44 } as const;
-export function suspicionBarRect(reg: Rect): Rect { const fb = focusBarRect(reg); return { x: fb.x + fb.w + FOCUS_BAR.labelW + 8, y: fb.y, w: SUSPICION_BAR.w, h: SUSPICION_BAR.h }; }
-/** 고·흔들기·폭탄 아이콘 자리 3개(원형 32px). 0이면 회색. */
-export const COUNT_ICON = { d: 32, gap: 4, go: 0xc0392b, shake: 0xb08d4a, bomb: 0xf0923a, off: 0x3a3a36 } as const;
-/** 미션 패널(화투판 오른쪽 위): 폭 150, "MISSION" 글자 + 미니 카드 2~3장 + "×N". */
-export const MISSION_PANEL = { w: 150, h: 78, pad: 6, titleH: 16, cardH: 44, gap: 4 } as const;
+/** 의심도 바: 집중 바 아래 줄(같은 x, 가로 120, 높이 10), 라벨 "의심 36" 18. 50 이상 주황, 70 이상 빨강. 속임수 기술·투시경이 없으면 그리지 않는다. */
+export const SUSPICION_BAR = { w: 120, h: 10, fill: 0xb08d4a, warn: 0xf0923a, danger: 0xc0392b, track: 0x1a0f10, warnAt: 50, dangerAt: 70 } as const;
+export function suspicionBarRect(reg: Rect): Rect { const fb = focusBarRect(reg); return { x: fb.x, y: fb.y + MY_ROW_H, w: SUSPICION_BAR.w, h: SUSPICION_BAR.h }; }
+export function suspicionColor(v: number): number { return v >= SUSPICION_BAR.dangerAt ? SUSPICION_BAR.danger : v >= SUSPICION_BAR.warnAt ? SUSPICION_BAR.warn : SUSPICION_BAR.fill; }
+/** 고·흔들기·폭탄 아이콘 자리 3개(원형 36px, 글자 18). 0이면 회색. 내 패널은 집중·의심 열 오른쪽(x 340), 상대 패널은 이름 아래. */
+export const COUNT_ICON = { d: 36, gap: 4, size: TEXT_MIN, go: 0xc0392b, shake: 0xb08d4a, bomb: 0xf0923a, off: 0x3a3a36, myX: 340 } as const;
+/** 미션 패널(화투판 오른쪽 위): 폭 150, "MISSION" 글자(18) + 미니 카드 2~3장 + "×N"(20). */
+export const MISSION_PANEL = { w: 150, h: 84, pad: 6, titleH: 22, cardH: 44, gap: 4 } as const;
 /** 말풍선: 점수 배지와의 간격, 한 줄 높이, 두 줄까지 허용한 최대 높이(패널 안에 머무름). */
 export const SPEECH = { gapToBadge: 12, h: 34, maxH: 52 } as const;
 /** 상대 말풍선 전용 자리(상대 정보 패널 오른쪽 위, 점수 배지 왼쪽 − 12). 이름·칩(왼쪽)·점수 배지와 겹치지 않도록 미리 비워 둔다. 긴 대사는 이 폭 안에서 두 줄로 접는다. */
@@ -221,7 +240,7 @@ export function tableInner(): Rect {
 export const BASE_INNER_H = TABLE_H_BASE - 24;
 export const FLOOR_STRETCH_MAX = 1.3;
 /** 화투판 위쪽 메시지 캡슐(비어 있지 않을 때만). 바닥 자리를 차지하지 않는다. */
-export const TABLE_MESSAGE = { h: 30, alpha: 0.55, size: 14, padX: 16, top: 8 } as const;
+export const TABLE_MESSAGE = { h: 34, alpha: 0.6, size: TEXT_MIN, padX: 16, top: 8 } as const;
 
 /** 바닥패 자리: 더미 중심을 원점으로, 첫 장 중심의 상대 좌표(카드 폭·높이 단위)와 자리별 고정 기울기(도). */
 export type FloorSlot = { ux: number; uy: number; angle: number };
@@ -403,11 +422,14 @@ export function miniStep(n: number, availW: number, cardW: number, maxStep: numb
 
 // ---- 집중력 바(내 정보 패널) ----
 /** 집중력 바: 가로 120, 금색. 이름 아래 왼쪽에 두고 그 오른쪽에 "현재/최대" 작은 글자(labelW 안). */
-export const FOCUS_BAR = { w: 120, h: 10, labelW: 64, labelSize: 11, fill: 0xe0b64f, track: 0x0f1a16 } as const;
+export const FOCUS_BAR = { w: 120, h: 10, labelW: 120, labelSize: TEXT_MIN, fill: 0xe0b64f, track: 0x0f1a16 } as const;
+/** 내 정보 패널의 줄 높이(이름 줄 아래 집중 줄·의심 줄). */
+export const MY_ROW_H = 21;
 /** 내 정보 패널 안 집중력 바 자리(패널 아래쪽, 초상화 오른쪽 열과 같은 x). */
 export function focusBarRect(reg: Rect): Rect {
   const x = MARGIN + 26 + INFO.portraitSmall * 2;
-  return { x, y: reg.y + reg.h - 3 - 7 - FOCUS_BAR.h, w: FOCUS_BAR.w, h: FOCUS_BAR.h };
+  // 집중 줄: 이름 줄(4..28) 아래, 글자 18의 가운데에 바(높이 10)
+  return { x, y: reg.y + 32 + Math.round((TEXT_MIN - FOCUS_BAR.h) / 2), w: FOCUS_BAR.w, h: FOCUS_BAR.h };
 }
 
 // ---- 여정 지도 ----

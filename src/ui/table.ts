@@ -2,7 +2,7 @@
 // 메시지는 비어 있지 않을 때만 위쪽 가운데의 반투명 캡슐로 뜨며 바닥 자리를 차지하지 않는다.
 import type { Card } from '../cards';
 import { drawCardBack, drawCardFace, drawMiniCard } from './cardView';
-import { CARD_ASPECT, COUNT_BADGE, type FloorLayout, MISSION_PANEL, REGIONS, type Rect, TABLE_MESSAGE, floorLayout } from './layout';
+import { CARD_ASPECT, COUNT_BADGE, type FloorLayout, MISSION_PANEL, REGIONS, type Rect, TABLE_MESSAGE, TEXT_MIN, TEXT_NUM, floorLayout } from './layout';
 import { COLORS, FONT, type UI, box, countBadge, label } from './widgets';
 
 export type TableView = {
@@ -27,8 +27,8 @@ export function missionPanelRect(): Rect { const t = REGIONS.table; return { x: 
 function drawMissionPanel(ui: UI, m: NonNullable<TableView['mission']>) {
   const r = missionPanelRect(), P = MISSION_PANEL;
   box(ui, r.x, r.y, r.w, r.h, m.done ? 0x6b5420 : 0x0b1a14, 0.92, m.done ? COLORS.cardSelectedEdge : COLORS.brassDim, m.done ? 2 : 1);
-  label(ui, r.x + P.pad, r.y + 2, 'MISSION', 11, m.done ? COLORS.gold : COLORS.goldDim, r.w, [0, 0], true);
-  label(ui, r.x + r.w - P.pad, r.y + 1, `×${m.multiplier}`, 14, COLORS.gold, 40, [1, 0], true);
+  label(ui, r.x + P.pad, r.y + 2, 'MISSION', TEXT_MIN, m.done ? COLORS.gold : COLORS.goldDim, r.w, [0, 0], true);
+  label(ui, r.x + r.w - P.pad, r.y + 1, `×${m.multiplier}`, TEXT_NUM, COLORS.gold, 40, [1, 0], true);
   const cw = Math.round(P.cardH * CARD_ASPECT), y = r.y + P.titleH + 4;
   m.cards.forEach((c, i) => {
     const x = r.x + P.pad + i * (cw + P.gap);

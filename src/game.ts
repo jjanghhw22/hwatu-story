@@ -6,6 +6,8 @@ export type GukjinChoice = '열끗' | '피';
 export const GO_STOP_THRESHOLD = 7;
 /** 폭탄 1회마다 지급하는 "손패 없이 더미만 뒤집기" 기회. */
 export const BOMB_FLIP_CHANCES = 2;
+/** 합의 종료(들통)의 최소 기준 점수: 승자 기본 점수가 이보다 낮으면 이 값으로 정산한다. */
+export const FORFEIT_MIN_BASE = 7;
 /** 판 결과. 스톱한 쪽이 즉시 승자. 양쪽 행동이 모두 소진될 때까지 승자가 없으면 나가리(박·정산 없음, 배수 이월 없음). */
 export type RoundResult =
   | { outcome: '승리'; winner: number; base: number; goCount: number; settled: number; baks: BakKind[]; multiplier: number; declared: Declared[]; declMultiplier: number; final: number; /** 합의 종료(들통·접기)로 끝난 판: 박·선언 배수 없이 승자 기본 점수의 고 공식만 적용. */ forfeit?: boolean }
@@ -340,7 +342,8 @@ export class GameState {
    */
   forfeit(loser:0|1):RoundResult{
     if(this.over)throw new Error('이미 끝난 판입니다.');
-    const winner=1-loser, base=this.baseScore(winner), goCount=this.goCount[winner], settled=settlementPoints(base,goCount);
+    // 최소 벌점: 승자 기본 점수가 낮아도 "상대가 7점으로 스톱한 것"과 같게(요청 08 A-3)
+    const winner=1-loser, base=Math.max(this.baseScore(winner),FORFEIT_MIN_BASE), goCount=this.goCount[winner], settled=settlementPoints(base,goCount);
     this.result={outcome:'승리',winner,base,goCount,settled,baks:[],multiplier:1,declared:[],declMultiplier:1,final:settled,forfeit:true};
     this.version+=1;
     return this.result;

@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CARDS, cardById } from '../cards.ts';
-import { GameState } from '../game.ts';
+import { FORFEIT_MIN_BASE, GameState } from '../game.ts';
 import { seededRng } from '../rng.ts';
 import { settlementPoints } from '../score.ts';
 import { dealSetup } from '../sim.ts';
@@ -16,13 +16,13 @@ import { addToBag, banPlace, equipGear, initialProgress, isBanned, rest, unequip
 test('의심도: 상승 = 기본값 × sharpness, 0~100 고정, 정직 기술은 0, 들통은 100', () => {
   assert.equal(raiseSuspicion(0, SUSPICION.swapSuccess, OPPONENTS.ma.sharpness), 15);
   assert.equal(raiseSuspicion(0, SUSPICION.swapFail, OPPONENTS.mujin.sharpness), 80);
-  assert.equal(raiseSuspicion(50, SUSPICION.xray, OPPONENTS.highroller.sharpness), 80);
+  assert.equal(raiseSuspicion(50, SUSPICION.xray, OPPONENTS.highroller.sharpness), 90);
   assert.equal(raiseSuspicion(90, SUSPICION.swapFail, 1), 100);
   assert.equal(raiseSuspicion(30, SUSPICION.swapSuccess, OPPONENTS.barber.sharpness), 30, '대식·아버지 판에서는 오르지 않는다');
   for (const id of ['eye', 'calmFace', 'lookAway', 'readThrough', 'fold', 'memory'] as const) assert.equal(SKILLS[id].suspicion, 0);
   assert.ok(isBusted(100) && !isBusted(99));
   assert.ok(crossesWarn(69, 70) && !crossesWarn(70, 80) && !crossesWarn(10, 60));
-  assert.deepEqual([OPPONENTS.ma, OPPONENTS.stranger, OPPONENTS.bokhee, OPPONENTS.highroller, OPPONENTS.sangcheol, OPPONENTS.taeoh, OPPONENTS.jeongho, OPPONENTS.mujin, OPPONENTS.father].map(o => o.sharpness), [0.6, 0.8, 1.0, 1.5, 1.2, 1.3, 1.5, 2.0, 0]);
+  assert.deepEqual([OPPONENTS.ma, OPPONENTS.stranger, OPPONENTS.bokhee, OPPONENTS.highroller, OPPONENTS.sangcheol, OPPONENTS.taeoh, OPPONENTS.jeongho, OPPONENTS.mujin, OPPONENTS.father].map(o => o.sharpness), [0.6, 0.8, 1.0, 2.0, 1.2, 1.3, 1.5, 2.0, 0]);
 });
 
 test('의심도 하강: 태연한 얼굴·마스크 −30, 0 아래 없음. 게이지는 속임수 기술이나 투시경이 있을 때만', () => {
@@ -40,8 +40,13 @@ test('들통: GameState.forfeit(loser)는 승자 기본 점수의 고 공식만 
   const r = s.forfeit(0);
   assert.equal(r.outcome, '승리');
   if (r.outcome !== '승리') return;
-  assert.equal(r.winner, 1); assert.equal(r.base, s.baseScore(1)); assert.equal(r.goCount, 1);
-  assert.equal(r.settled, settlementPoints(s.baseScore(1), 1)); assert.equal(r.final, r.settled);
+  const base = Math.max(s.baseScore(1), FORFEIT_MIN_BASE);
+  assert.equal(r.winner, 1); assert.equal(r.base, base); assert.equal(r.goCount, 1);
+  assert.equal(r.settled, settlementPoints(base, 1)); assert.equal(r.final, r.settled);
+  // 최소 벌점: 승자 기본 점수가 0이어도 7점으로 스톱한 것과 같다
+  const z = new GameState(dealSetup(seededRng(6)));
+  const rz = z.forfeit(0);
+  assert.ok(rz.outcome === '승리' && rz.base === FORFEIT_MIN_BASE && rz.final === FORFEIT_MIN_BASE);
   assert.deepEqual(r.baks, []); assert.equal(r.multiplier, 1); assert.deepEqual(r.declared, []); assert.equal(r.declMultiplier, 1); assert.equal(r.forfeit, true);
   assert.equal(s.version, v + 1); assert.ok(s.over);
   assert.throws(() => s.forfeit(1), /끝난/);

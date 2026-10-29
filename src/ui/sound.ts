@@ -9,7 +9,9 @@
 // 저음 몸통(thump)은 쓰지 않는다. 멜로디·전자음·긴 잔향 없음. 마스터 저역 통과는 7kHz(먹먹함 방지), 압축기로 합산 볼륨 제한.
 // 브라우저 정책상 첫 사용자 입력 뒤에 unlock()을 불러야 소리가 난다. 켜기/끄기는 localStorage에 기억한다.
 // 합성음이므로 실제 화투 녹음과는 차이가 있다. 아래 수치는 청취로 조정하는 시작점이며 이번 변경은 직접 듣고 확인하지 않았다.
-export type SoundKind = 'select' | 'deal' | 'flip' | 'capture' | 'ttadak' | 'bomb' | 'combo' | 'bell';
+export type SoundKind = 'select' | 'deal' | 'flip' | 'capture' | 'ttadak' | 'bomb' | 'combo' | 'bell' | 'thud';
+/** 6장 "걸릴 뻔": 낮은 사인 한 음(90Hz), 짧은 감쇠. */
+const THUD = { freq: 90, attack: 0.004, decay: 0.32, vol: 0.55 } as const;
 /** 흔들기 종: 2kHz 사인 한 번, 짧은 감쇠(멜로디 없음). */
 const BELL = { freq: 2000, attack: 0.002, decay: 0.25, vol: 0.22 } as const;
 const STORAGE_KEY = 'hwatu.sound';
@@ -27,7 +29,7 @@ const HITS = {
   combo: { attack: 0.0012, decay: 0.026, band: 3600, q: 1.6, vol: 0.34 },
 } satisfies Record<string, Hit>;
 /** 종류별 타격 순서(시작 시각 오프셋 초, 파라미터). 한 종류는 한 번의 play로 모두 예약된다. */
-const PATTERNS: Record<Exclude<SoundKind, 'bell'>, { at: number; hit: Hit }[]> = {
+const PATTERNS: Record<Exclude<SoundKind, 'bell' | 'thud'>, { at: number; hit: Hit }[]> = {
   select: [{ at: 0, hit: HITS.select }],
   deal: [{ at: 0, hit: HITS.deal }],
   flip: [{ at: 0, hit: HITS.flip }],
@@ -75,6 +77,7 @@ export class SoundFx {
     this.lastAt[kind] = now;
     const t = this.ctx.currentTime;
     if (kind === 'bell') { this.tone(t, BELL.freq, BELL.attack, BELL.decay, BELL.vol); return; }
+    if (kind === 'thud') { this.tone(t, THUD.freq, THUD.attack, THUD.decay, THUD.vol); return; }
     for (const p of PATTERNS[kind]) this.hit(t + p.at, p.hit);
   }
   /** 사인 한 음(종): 빠른 어택 뒤 지수 감쇠. 잡음 타격과 달리 음정이 있지만 한 음뿐이라 멜로디는 아니다. */

@@ -2,6 +2,7 @@
 // 글자·이름·수치는 바이블의 것을 그대로 쓴다. 컷 그림 경로는 적어 두되 파일이 없으면 어두운 패널 + 글자로 표시한다(F1에서는 그림 파일 없음).
 import type { CharacterId } from '../character.ts';
 import type { PlaceId } from './places.ts';
+import type { ItemId } from './items.ts';
 import type { OpponentId } from './opponents.ts';
 import type { SkillId } from './skills.ts';
 
@@ -27,6 +28,10 @@ export type Chapter = {
   cover?: string;
   /** 승리 후 집중력 최대치(바이블 6절). 없으면 그대로. */
   focusMaxAfter?: number;
+  /** 장을 끝내면 켜지는 플래그(눈썰미 강화, 동전 상점 해금, 압류 동결, 그날 밤 잠금 등). */
+  setFlags?: string[];
+  /** 장을 끝내면 가방에 들어오는 물건. */
+  rewardItems?: Partial<Record<ItemId, number>>;
   scenes: { before: Scene[]; after: Scene[] };
 };
 
@@ -102,12 +107,59 @@ export const CHAPTERS: readonly Chapter[] = [
       ],
     },
   },
-  { id: 'ch4', no: 4, title: '시장에서는 웃는 사람이 무섭다', cover: `${STORY_ASSET_DIR}/cover-ch4.png`, place: 'market', unlocks: ['harbor'], opponentId: 'bokhee', rewardSkill: 'lookAway', focusMaxAfter: 120,
-    scenes: { before: placeholder('장부의 다음 흔적. 복희에게 사진 속 인물을 듣는다. (다음 단계)'), after: placeholder('“네 아버지는 왕을 이기려던 사람이 아니야.” (다음 단계)') } },
-  { id: 'ch5', no: 5, title: '친구라고 부르는 남자', cover: `${STORY_ASSET_DIR}/cover-ch5.png`, place: 'harbor', unlocks: [], opponentId: 'bonggu', rewardSkill: 'swap',
-    scenes: { before: placeholder('항구의 큰 판. 태오가 길을 열어 준다. (다음 단계)'), after: placeholder('바꿔치기. 의심도 게이지가 처음 보인다. (다음 단계)') } },
-  { id: 'ch6', no: 6, title: '이기고도 빚지는 밤', cover: `${STORY_ASSET_DIR}/cover-ch6.png`, place: 'harbor', unlocks: [], opponentId: 'highroller',
-    scenes: { before: placeholder('익명의 고액 판 상대 2명 연속. (다음 단계)'), after: placeholder('우승금 동결. 태오는 사라졌다. 돈 목표가 사라진다. (다음 단계)') } },
+  {
+    id: 'ch4', no: 4, title: '시장에서는 웃는 사람이 무섭다', cover: `${STORY_ASSET_DIR}/cover-ch4.png`, place: 'market', unlocks: ['harbor'], opponentId: 'bokhee', rewardSkill: 'lookAway', focusMaxAfter: 120,
+    setFlags: ['eye+'],
+    scenes: {
+      before: [
+        cut('ch4-market.png', '장부의 다음 흔적. 복희에게 사진 속 인물을 듣는다.'),
+        line('bokhee', '밥은 먹었니?'),
+        line('player', '먹었습니다.'),
+        line('bokhee', '거짓말도 못하네. 그러니까 패도 그렇게 내지.'),
+      ],
+      after: [
+        cut('ch4-photo.png', '사진의 나머지 — 대식, 아버지, 항구의 문씨(태오 아버지), 호텔의 백무진, 얼굴 접힌 사람.'),
+        line('bokhee', '네 아버지는 왕을 이기려던 사람이 아니야.'),
+        line('player', '그럼요?'),
+        line('bokhee', '왕이 만들어지는 걸 도왔지.'),
+        cut('ch4-crack.png', '믿음에 첫 금. 아버지는 돈을 빌려준 사람이 아니라 자기 때문에 돈을 잃은 사람들을 찾아다녔다.'),
+      ],
+    },
+  },
+  {
+    id: 'ch5', no: 5, title: '친구라고 부르는 남자', cover: `${STORY_ASSET_DIR}/cover-ch5.png`, place: 'harbor', unlocks: [], opponentId: 'bonggu', rewardSkill: 'swap',
+    setFlags: ['taeoh.coin', 'home.newFurniture'], rewardItems: { luckyCoin: 1 },
+    scenes: {
+      before: [
+        cut('ch5-harbor.png', '항구의 큰 판. 태오가 길을 열어 준다.'),
+        line('taeoh', '우리도 대충 친구 하면 되겠네.'),
+        cut('ch5-manner.png', '큰 판 예절, 위험한 자리 회피. 태오가 옆에서 한 판에 한 번 대신 쳐 준다.'),
+      ],
+      after: [
+        line('taeoh', '이번에 따면 네 아버지 빚 같은 건 신경도 안 써도 돼.'),
+        cut('ch5-no.png', '서린도 대식도 가지 말라고 한다.'),
+        cut('ch5-kid.png', '도윤은 둘 다 자신을 어린애로 본다고 생각한다.'),
+        cut('ch5-go.png', '그리고 간다.'),
+      ],
+    },
+  },
+  {
+    id: 'ch6', no: 6, title: '이기고도 빚지는 밤', cover: `${STORY_ASSET_DIR}/cover-ch6.png`, place: 'harbor', unlocks: [], opponentId: 'highroller',
+    setFlags: ['debt.frozen', 'night.ch6'],
+    scenes: {
+      before: [cut('ch6-bigtable.png', '익명의 고액 판 상대 2명 연속. 판이 크고 눈이 많다.')],
+      after: [
+        cut('ch6-settle.png', '정산. 태오가 보증한 판돈 일부가 도윤 명의 대여금으로 처리돼 있다. 우승금은 동결, 참가자들은 둘이 한패라 믿는다.'),
+        cut('ch6-gone.png', '태오는 사라졌다.'),
+        cut('ch6-barber.png', '대성이발관.'),
+        line('player', '알았죠? 이런 판인 거.'),
+        line('barber', '네 아버지 때도 말렸어.'),
+        line('player', '말리기만 했어요? 그때도?'),
+        line('barber', '그때 내가 판을 깔았으니까!'),
+        cut('ch6-truth.png', '대식은 아버지의 조력자였다. 두 사람은 백무진을 위해 사람들을 큰 판으로 끌어들였다.'),
+      ],
+    },
+  },
   { id: 'ch7', no: 7, title: '편의점 뒷문', cover: `${STORY_ASSET_DIR}/cover-ch7.png`, place: 'store', unlocks: ['billiards'], opponentId: 'sangcheol', rewardSkill: 'readThrough',
     scenes: { before: placeholder('수금업자 ‘뱀눈’이 편의점 뒷문으로 온다. (다음 단계)'), after: placeholder('목표가 바뀐다 — 백운레저. (다음 단계)') } },
   { id: 'ch8', no: 8, title: '돌아온 친구', cover: `${STORY_ASSET_DIR}/cover-ch8.png`, place: 'billiards', unlocks: ['hotel'], opponentId: 'taeoh',
@@ -124,7 +176,17 @@ export const CHAPTERS: readonly Chapter[] = [
 
 export const CHAPTER_IDS = CHAPTERS.map(c => c.id);
 /** 이야기·대결이 실제로 구현된 장. 그 뒤 장의 무대는 지도에서 잠긴 채 보인다(보정: 다음 목적지 ▶는 집에). */
-export const IMPLEMENTED_CHAPTERS: readonly ChapterId[] = ['prologue', 'ch1', 'ch2', 'ch3'];
+export const IMPLEMENTED_CHAPTERS: readonly ChapterId[] = ['prologue', 'ch1', 'ch2', 'ch3', 'ch4', 'ch5', 'ch6'];
+/** 6장 그날 밤 집 장면(비닐봉지): 휴식 직전 1회. */
+export const NIGHT_CH6_SCENES: Scene[] = [
+  cut('ch6-bag.png', '문 앞 비닐봉지. 삼각김밥 둘, 생수.'),
+  line('seorin', '먹고 화내. 굶으면 판단부터 이상해져.'),
+];
+/** 5장 편의점 앞 컵라면 셋(5장 진행 중 편의점 첫 방문 때 1회). */
+export const CH5_RAMEN_SCENES: Scene[] = [
+  cut('ch5-ramen.png', '편의점 앞 컵라면 셋.'),
+  line('seorin', '저 사람은 웃을 때 대답을 안 해.'),
+];
 export const isChapterImplemented = (id: ChapterId) => IMPLEMENTED_CHAPTERS.includes(id);
 export const isChapterId = (v: unknown): v is ChapterId => typeof v === 'string' && CHAPTERS.some(c => c.id === v);
 export function chapterById(id: ChapterId): Chapter { return CHAPTERS.find(c => c.id === id)!; }

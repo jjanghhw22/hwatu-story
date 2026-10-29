@@ -34,6 +34,13 @@ export const SEIZURE_NOTICE = 32000000;
 export const FOCUS_BASE = 100;
 /** 셀 수 있는 값의 키. */
 export const COUNTERS = { bathWins: 'bath.wins' } as const;
+/** 장소별 일반 대결 승수 키(목욕탕은 COUNTERS.bathWins와 같다). */
+export const winsKey = (place: PlaceId) => `${place}.wins`;
+/** 6장 그날 밤: 연습 대결이 잠기고 휴식만 가능. 휴식(다음 날)하면 풀린다. */
+export const NIGHT_LOCK_FLAG = 'night.ch6';
+export const DEBT_FROZEN_FLAG = 'debt.frozen';
+/** 강봉구 입장: 항구 일반 대결 승수. */
+export const BONGGU_ENTRY_WINS = 1;
 /** 마 사장 대결 입장: 목욕탕 일반 대결 승수. */
 export const MA_ENTRY_WINS = 2;
 
@@ -98,7 +105,7 @@ export function resetProgress(storage: KV | undefined = defaultStorage()): Progr
 // ---- 집중력 ----
 /** 집 휴식: 집중력 전부 회복, 하루 경과. 첫 휴식은 '첫 귀가' 플래그(숙면 안대 해금). */
 export function rest(p: Progress): Progress {
-  const flags: Record<string, boolean> = { ...p.flags, [FLAGS.homeFirstRest]: true };
+  const flags: Record<string, boolean> = { ...p.flags, [FLAGS.homeFirstRest]: true, [NIGHT_LOCK_FLAG]: false };
   if (p.gear.includes('sleepMask')) flags[FLAGS.maskRested] = true; // 숙면 안대: 다음 대결 집중력 +30
   return { ...p, focus: p.focusMax, day: p.day + 1, flags };
 }
@@ -119,6 +126,10 @@ export function counter(p: Progress, key: string): number { return p.counters[ke
 export function bump(p: Progress, key: string, by = 1): Progress { return { ...p, counters: { ...p.counters, [key]: counter(p, key) + by } }; }
 /** 마 사장 대결 입장: 목욕탕 일반 대결 2승 + 3장이 현재 장. */
 export function canChallengeMa(p: Progress): boolean { return p.chapterId === 'ch3' && counter(p, COUNTERS.bathWins) >= MA_ENTRY_WINS; }
+/** 강봉구 입장: 항구 일반 대결 1승 + 5장이 현재 장. */
+export function canChallengeBonggu(p: Progress): boolean { return p.chapterId === 'ch5' && counter(p, winsKey('harbor')) >= BONGGU_ENTRY_WINS; }
+export function isNightLocked(p: Progress): boolean { return p.flags[NIGHT_LOCK_FLAG] === true; }
+export function isDebtFrozen(p: Progress): boolean { return p.flags[DEBT_FROZEN_FLAG] === true; }
 
 // ---- 가방·아이템 ----
 export function bagCount(p: Progress, id: ItemId): number { return p.bag[id] ?? 0; }
@@ -182,7 +193,11 @@ export function completeChapter(p: Progress, c: Chapter): Progress {
   const unlockedPlaces = Array.from(new Set([...p.unlockedPlaces, ...c.unlocks]));
   const focusMax = Math.max(p.focusMax, c.focusMaxAfter ?? 0);
   const next = p.chapterId === c.id ? nextChapterId(c.id) : p.chapterId;
-  return { ...p, skills, unlockedPlaces, focusMax, focus: Math.min(p.focus, focusMax), chapterId: next, flags: { ...p.flags, [chapterDoneFlag(c.id)]: true } };
+  const flags: Record<string, boolean> = { ...p.flags, [chapterDoneFlag(c.id)]: true };
+  for (const f of c.setFlags ?? []) flags[f] = true;
+  let out: Progress = { ...p, skills, unlockedPlaces, focusMax, focus: Math.min(p.focus, focusMax), chapterId: next, flags };
+  for (const [id, n] of Object.entries(c.rewardItems ?? {})) out = addToBag(out, id as ItemId, n ?? 1);
+  return out;
 }
 export function currentChapter(p: Progress): Chapter { return chapterById(p.chapterId); }
 export function setFlag(p: Progress, key: string, value = true): Progress { return { ...p, flags: { ...p.flags, [key]: value } }; }

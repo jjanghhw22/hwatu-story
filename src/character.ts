@@ -29,7 +29,7 @@ export type ImageFit = { focus: readonly [number, number]; zoom: number };
 /** 인물 id. 초상화 텍스처 키와 이야기 데이터(대사의 speaker)가 이 값을 쓴다. */
 export type CharacterId =
   | 'player' | 'barber' | 'seorin' | 'ma' | 'bokhee' | 'taeoh' | 'bonggu' | 'sangcheol'
-  | 'jeongho' | 'yura' | 'sangman' | 'mujin' | 'father' | 'bamcha' | 'stranger';
+  | 'jeongho' | 'yura' | 'sangman' | 'mujin' | 'father' | 'bamcha' | 'stranger' | 'merchant';
 
 export type Character = {
   key: CharacterId;
@@ -90,6 +90,7 @@ export const CHARACTERS: Record<CharacterId, Character> = {
   father: pending('father', '한기석', '한'),
   bamcha: pending('bamcha', '밤차', '밤'),
   stranger: pending('stranger', '고액 판 상대', '?'),
+  merchant: pending('merchant', '건어물 상인', '상'),
 };
 export const CHARACTER_IDS = Object.keys(CHARACTERS) as CharacterId[];
 
