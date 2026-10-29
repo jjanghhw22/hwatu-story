@@ -27,7 +27,7 @@ test('상점 해금: 처음엔 삼각김밥만, 2장 대화 뒤 캔커피, 재�
   assert.equal(rest(p).flags[FLAGS.homeFirstRest], true);
   for (const it of ITEMS) if (it.price === null) assert.ok(!shopItems({ ...f2, 'ch4.done': true, 'ch3.done': true }).some(x => x.id === it.id), it.id);
   assert.ok(isItemUnlocked(ITEMS[0], {}));
-  assert.deepEqual(ITEMS.filter(i => i.price !== null).map(i => [i.id, i.price]), [['riceBall', 1500], ['canCoffee', 2500], ['glucoseCandy', 1200], ['warmLunch', 6000], ['sleepMask', 15000]]);
+  assert.deepEqual(ITEMS.filter(i => i.price !== null).map(i => [i.id, i.price]), [['riceBall', 1500], ['canCoffee', 2500], ['glucoseCandy', 1200], ['warmLunch', 6000], ['sleepMask', 15000], ['xrayGlasses', 30000], ['blankMask', 8000]]);
 });
 
 test('가방 증감과 구매: 돈이 모자라면 못 사고, 0개가 되면 키가 사라진다', () => {

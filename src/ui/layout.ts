@@ -129,18 +129,36 @@ export function activeBoxRect(reg: Rect, big: boolean): Rect {
   if (big) return { x: INFO.split, y: reg.y + reg.h - 36, w, h };
   return { x: scoreBadgeRect(reg, false).x - 10 - w, y: reg.y + Math.round(reg.h / 2) - 13, w, h };
 }
-/** 기술 줄: 기술 버튼(폭 INFO.peekW=140, 높이 32, 간격 8)을 왼쪽부터, 가방 버튼(폭 100)은 오른쪽 끝, 공개한 더미 패는 마지막 기술 버튼 오른쪽. */
-export const SKILL_BAR = { btnW: INFO.peekW, btnH: 32, gap: 6, bagW: 90, maxSkills: 4 } as const; // 4×140 + 3×6 = 578 → 20..598, 가방 610..700
-export type SkillBarLayout = { buttons: Rect[]; bag: Rect; preview: Rect };
-export function skillBarLayout(reg: Rect, nSkills: number): SkillBarLayout {
-  const { btnW, btnH, gap, bagW } = SKILL_BAR;
+/**
+ * 기술 줄: 기술 버튼(폭 최대 140, 높이 32, 간격 6)을 왼쪽부터 최대 4개, 작은 장비 버튼(폭 64)은 가방 버튼 왼쪽, 가방 버튼(폭 90)은 오른쪽 끝.
+ * 장비 버튼이 있어 자리가 모자라면 기술 버튼 폭을 줄인다(최소 96). 공개한 더미 패(1~2장)는 마지막 기술 버튼 오른쪽에 두되, 자리가 없으면 화투판 오른쪽 아래 구석.
+ */
+export const SKILL_BAR = { btnW: INFO.peekW, btnMinW: 96, btnH: 32, gap: 6, bagW: 90, gearW: 64, maxSkills: 4 } as const; // 4×140 + 3×6 = 578 → 20..598, 가방 610..700
+export type SkillBarLayout = { buttons: Rect[]; gear: Rect[]; bag: Rect; preview: Rect; /** 공개 패 2장일 때 둘째 장 자리. */ preview2: Rect; /** 공개 패가 기술 줄 안에 들어가는지(아니면 화투판 구석). */ previewInBar: boolean };
+export function skillBarLayout(reg: Rect, nSkills: number, nGear = 0): SkillBarLayout {
+  const { btnH, gap, bagW, gearW } = SKILL_BAR;
   const y = reg.y + Math.round((reg.h - btnH) / 2);
   const n = Math.min(nSkills, SKILL_BAR.maxSkills);
-  const buttons = Array.from({ length: n }, (_, i) => ({ x: MARGIN + i * (btnW + gap), y, w: btnW, h: btnH }));
   const bag = { x: reg.w - MARGIN - bagW, y, w: bagW, h: btnH };
-  const px = MARGIN + n * (btnW + gap);
-  return { buttons, bag, preview: { x: px, y: reg.y + Math.round((reg.h - CARD.peek.h) / 2), w: CARD.peek.w, h: CARD.peek.h } };
+  const gear = Array.from({ length: nGear }, (_, i) => ({ x: bag.x - (i + 1) * (gearW + gap), y, w: gearW, h: btnH }));
+  const rightLimit = nGear ? gear[nGear - 1].x - gap : bag.x - gap;
+  const btnW = n ? Math.max(SKILL_BAR.btnMinW, Math.min(SKILL_BAR.btnW, Math.floor((rightLimit - MARGIN - (n - 1) * gap) / n))) : SKILL_BAR.btnW;
+  const buttons = Array.from({ length: n }, (_, i) => ({ x: MARGIN + i * (btnW + gap), y, w: btnW, h: btnH }));
+  const px = MARGIN + n * (btnW + gap), pw = CARD.peek.w, ph = CARD.peek.h;
+  const previewInBar = px + pw * 2 + 4 <= rightLimit;
+  const t = REGIONS.table;
+  const preview = previewInBar ? { x: px, y: reg.y + Math.round((reg.h - ph) / 2), w: pw, h: ph } : { x: t.x + t.w - 12 - pw * 2 - 4, y: t.y + t.h - 12 - ph, w: pw, h: ph };
+  return { buttons, gear, bag, preview, preview2: { ...preview, x: preview.x + pw + 4 }, previewInBar };
 }
+
+// ---- 의심도 바(내 정보 패널, 집중력 바 오른쪽) ----
+/** 붉은 눈 모양 바: 가로 120. 속임수 기술·투시경이 없으면 그리지 않는다. */
+export const SUSPICION_BAR = { w: 120, h: 10, fill: 0xc0392b, track: 0x1a0f10, labelW: 44 } as const;
+export function suspicionBarRect(reg: Rect): Rect { const fb = focusBarRect(reg); return { x: fb.x + fb.w + FOCUS_BAR.labelW + 8, y: fb.y, w: SUSPICION_BAR.w, h: SUSPICION_BAR.h }; }
+/** 고·흔들기·폭탄 아이콘 자리 3개(원형 32px). 0이면 회색. */
+export const COUNT_ICON = { d: 32, gap: 4, go: 0xc0392b, shake: 0xb08d4a, bomb: 0xf0923a, off: 0x3a3a36 } as const;
+/** 미션 패널(화투판 오른쪽 위): 폭 150, "MISSION" 글자 + 미니 카드 2~3장 + "×N". */
+export const MISSION_PANEL = { w: 150, h: 78, pad: 6, titleH: 16, cardH: 44, gap: 4 } as const;
 /** 말풍선: 점수 배지와의 간격, 한 줄 높이, 두 줄까지 허용한 최대 높이(패널 안에 머무름). */
 export const SPEECH = { gapToBadge: 12, h: 34, maxH: 52 } as const;
 /** 상대 말풍선 전용 자리(상대 정보 패널 오른쪽 위, 점수 배지 왼쪽 − 12). 이름·칩(왼쪽)·점수 배지와 겹치지 않도록 미리 비워 둔다. 긴 대사는 이 폭 안에서 두 줄로 접는다. */
@@ -395,8 +413,10 @@ export function focusBarRect(reg: Rect): Rect {
 // ---- 여정 지도 ----
 /** 여정 지도: 머리 패널(day·소지금·압류 예고), 장소 노드(세로 지그재그 원), 아래 메뉴 버튼. 세로 간격은 화면 높이에 맞춰 늘린다. */
 export const JOURNEY = {
-  header: { y: 16, h: 104 },
-  node: { r: 44, ring: 4, xLeft: 210, xRight: 510, firstY: 220, stepMin: 104, stepMax: 140, labelGap: 8 },
+  /** 맨 위 현재 장 대표 컷(640×240, 그림 없으면 어두운 패널에 장 제목). */
+  cover: { w: 640, h: 240, y: 16 },
+  header: { y: 16 + 240 + 12, h: 104 },
+  node: { r: 44, ring: 4, xLeft: 210, xRight: 510, firstY: 16 + 240 + 12 + 104 + 60, stepMin: 88, stepMax: 140, labelGap: 8 },
   bottom: { h: 56, pad: 14 },
   /** 밤 → 아침 전환(검은 막) 전체 시간(ms). */
   nightMs: 400,

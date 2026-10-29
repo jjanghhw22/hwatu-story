@@ -4,7 +4,7 @@ import type { ModalLine } from './modals';
 import { COLORS } from './widgets';
 
 /** 빌드 표식. 메뉴 > 개발 정보에서만 보인다. 규칙·단계가 바뀔 때마다 올린다. */
-export const BUILD_TAG = 'v0.20 F2';
+export const BUILD_TAG = 'v0.21 F3-시스템';
 /** 미구현 항목. 일반 화면에는 두지 않고 메뉴의 규칙 안내·개발 정보에서만 보여준다. */
 export const NOT_IMPLEMENTED = '멍박·총통·첫뻑·연속뻑 미적용';
 

@@ -4,7 +4,7 @@ import type { GukjinChoice } from '../game';
 import type { Declared, Score } from '../score';
 import type { Character, Mood } from '../character';
 import { drawMiniBack, drawMiniCard } from './cardView';
-import { CAPTURED_EMPTY_ALPHA, CAPTURED_TAG_H, CHIP_COLORS, COUNT_BADGE, type CapturedRects, FOCUS_BAR, INFO, MARGIN, type Rect, activeBoxRect, capturedRects, flowChips, focusBarRect, oppHandLayout, scoreBadgeRect, speechZone } from './layout';
+import { CAPTURED_EMPTY_ALPHA, CAPTURED_TAG_H, CHIP_COLORS, COUNT_BADGE, COUNT_ICON, type CapturedRects, FOCUS_BAR, INFO, MARGIN, type Rect, SUSPICION_BAR, activeBoxRect, capturedRects, flowChips, focusBarRect, oppHandLayout, scoreBadgeRect, speechZone, suspicionBarRect } from './layout';
 import { type PortraitView, drawPortrait } from './portrait';
 import { COLORS, type UI, box, chip, countBadge, label, measureText, outlined, panel } from './widgets';
 
@@ -24,6 +24,10 @@ export type PlayerInfo = {
   first: boolean;
   /** 내 패널만: 집중력(현재/최대). 있으면 이름 아래 왼쪽에 금색 바로 그린다(규칙 상태가 아니라 이야기 진행 값). */
   focus?: { cur: number; max: number };
+  /** 내 패널만: 의심도(0~100). 있으면 집중력 바 오른쪽에 붉은 바. 속임수 기술·투시경이 없으면 넘기지 않는다(바 자체가 없음). */
+  suspicion?: number;
+  /** 상대 패널: 소지금(원, 표시용). */
+  money?: number;
 };
 
 export type StatusChip = { text: string; color: number; alpha?: number };
@@ -40,12 +44,30 @@ export function statusChips(p: Pick<PlayerInfo, 'goCount' | 'declared' | 'flipCh
   if (p.ppeokCount) out.push({ text: `뻑 ${p.ppeokCount}`, color: CHIP_COLORS.other });
   return out;
 }
+/** 고·흔·폭 아이콘 자리 3개(기준작 "1고 ·1 ·1" 자리): 값과 색. 0이면 회색. 순수 함수. */
+export function countIcons(p: Pick<PlayerInfo, 'goCount' | 'declared'>): { text: string; n: number; color: number }[] {
+  const decl = p.declared ?? [];
+  const shakes = decl.filter(d => d.kinds.includes('흔들기')).length, bombs = decl.filter(d => d.kinds.includes('폭탄')).length;
+  return [{ text: `고${p.goCount}`, n: p.goCount, color: COUNT_ICON.go }, { text: `흔${shakes}`, n: shakes, color: COUNT_ICON.shake }, { text: `폭${bombs}`, n: bombs, color: COUNT_ICON.bomb }];
+}
+/** 아이콘 3개를 x,y(왼쪽 위)부터 가로로. 지나간 오른쪽 끝 x를 돌려준다. 그림은 나중에 교체(이미지 발주 C). */
+function drawCountIcons(ui: UI, x: number, y: number, p: Pick<PlayerInfo, 'goCount' | 'declared'>): number {
+  const d = COUNT_ICON.d;
+  countIcons(p).forEach((ic, i) => {
+    const cx = x + i * (d + COUNT_ICON.gap) + d / 2, cy = y + d / 2;
+    const c = ui.scene.add.circle(cx, cy, d / 2, ic.n > 0 ? ic.color : COUNT_ICON.off).setStrokeStyle(1, ic.n > 0 ? 0xffffff : 0x55524c, 0.6);
+    ui.layer.add(c);
+    label(ui, cx, cy, ic.text, 12, ic.n > 0 ? '#ffffff' : '#8d8577', d, [0.5, 0.5], true);
+  });
+  return x + 3 * d + 2 * COUNT_ICON.gap;
+}
 
+export type PlayerInfoView = { scoreText: Phaser.GameObjects.Text; portrait: PortraitView; /** 의심도 바(흔들림 연출용). */ suspicionBar?: Phaser.GameObjects.Rectangle };
 /**
- * 정보 패널. 왼쪽 구역: 초상화 → (선 배지) 이름 → 상태 칩(넘치면 다음 줄). 오른쪽 구역: 점수 배지(상대는 그 아래 손패 뒷면 줄, 말풍선 자리는 그 왼쪽).
- * 점수 숫자 글자(강조 연출용)와 초상화를 돌려준다.
+ * 정보 패널. 왼쪽 구역: 초상화 → (선 배지) 이름 (상대는 소지금) → 고·흔·폭 아이콘 3개 → 나머지 상태 칩(넘치면 다음 줄). 오른쪽 구역: 점수 배지(상대는 그 아래 손패 뒷면 줄, 말풍선 자리는 그 왼쪽).
+ * 내 패널 아래 줄: 집중력 바(+ 의심도 바). 점수 숫자 글자(강조 연출용)·초상화·의심도 바를 돌려준다.
  */
-export function drawPlayerInfo(ui: UI, reg: Rect, p: PlayerInfo): { scoreText: Phaser.GameObjects.Text; portrait: PortraitView } {
+export function drawPlayerInfo(ui: UI, reg: Rect, p: PlayerInfo): PlayerInfoView {
   panel(ui, MARGIN, reg.y + 3, reg.w - MARGIN * 2, reg.h - 6, 'dark', p.active);
   const r = p.big ? INFO.portraitBig : INFO.portraitSmall;
   const cy = reg.y + reg.h / 2;
@@ -61,30 +83,42 @@ export function drawPlayerInfo(ui: UI, reg: Rect, p: PlayerInfo): { scoreText: P
     x += d + 6;
   }
   const name = label(ui, x, nameY, p.character.name, nameSize, COLORS.text, 200, [0, 0], true);
+  if (p.money !== undefined) label(ui, x + name.width + 8, nameY + (p.big ? 3 : 2), `${Math.round(p.money).toLocaleString('ko-KR')}원`, 13, COLORS.gold, 200, [0, 0], true);
   // 점수 배지(오른쪽 끝): 검은 바탕 + 황동 테두리 + 금색 큰 숫자 + "점"
   const sb = scoreBadgeRect(reg, p.big);
   box(ui, sb.x, sb.y, sb.w, sb.h, 0x111111, 0.9, COLORS.brass);
   const unit = label(ui, sb.x + sb.w - 10, sb.y + sb.h / 2 + 3, '점', 14, COLORS.gold, 30, [1, 0.5], true);
   const scoreText = label(ui, sb.x + sb.w - 10 - unit.width - 3, sb.y + sb.h / 2, String(p.score.total), 26, COLORS.gold, 80, [1, 0.5], true);
-  // 상태 칩: 왼쪽 구역 안에서 흐름 배치. 상대는 이름 아래 줄, 나는 이름 오른쪽(넘치면 아랫줄)
-  const chips = statusChips(p);
-  const widths = chips.map(c => measureText(ui.scene, c.text, INFO.chip.size, true));
+  // 아이콘 3개(고·흔·폭) + 나머지 칩: 상대는 이름 아래 줄, 나는 이름 오른쪽(칩이 넘치면 아랫줄)
   const act = activeBoxRect(reg, p.big);
   const maxX = p.big ? speechZone(reg).x - 6 : act.x - 8;
-  // 집중력 바가 있으면 칩의 둘째 줄은 바와 글자 오른쪽부터 시작해 겹치지 않는다
-  const fb = focusBarRect(reg);
-  const xRow2 = p.focus ? fb.x + fb.w + FOCUS_BAR.labelW : xLeft;
-  const rects = p.big ? flowChips(widths, xLeft, reg.y + 30, maxX) : flowChips(widths, x + name.width + 10, nameY, maxX, xRow2);
+  const iconX = p.big ? xLeft : x + name.width + 10, iconY = p.big ? reg.y + 28 : nameY - 7;
+  const afterIcons = drawCountIcons(ui, iconX, iconY, p);
+  const chips = statusChips(p).slice(1).filter(c => !c.text.startsWith('흔들기') && !c.text.startsWith('폭탄'));
+  const widths = chips.map(c => measureText(ui.scene, c.text, INFO.chip.size, true));
+  const fb = focusBarRect(reg), susp = suspicionBarRect(reg);
+  const xRow2 = p.suspicion !== undefined ? susp.x + susp.w + SUSPICION_BAR.labelW : p.focus ? fb.x + fb.w + FOCUS_BAR.labelW : xLeft;
+  const rects = p.big ? flowChips(widths, afterIcons + 6, reg.y + 34, maxX) : flowChips(widths, afterIcons + 6, nameY, maxX, xRow2);
   chips.forEach((c, i) => chip(ui, rects[i], c.text, c.color, c.alpha ?? 1));
+  let suspicionBar: Phaser.GameObjects.Rectangle | undefined;
   if (p.focus) {
     const ratio = p.focus.max > 0 ? Math.min(1, Math.max(0, p.focus.cur / p.focus.max)) : 0;
     box(ui, fb.x, fb.y, fb.w, fb.h, FOCUS_BAR.track, 1, COLORS.brassDim);
     if (ratio > 0) box(ui, fb.x + 1, fb.y + 1, Math.max(1, Math.round((fb.w - 2) * ratio)), fb.h - 2, FOCUS_BAR.fill);
     label(ui, fb.x + fb.w + 6, fb.y + fb.h / 2, `집중력 ${p.focus.cur}/${p.focus.max}`, FOCUS_BAR.labelSize, COLORS.gold, FOCUS_BAR.labelW + 40, [0, 0.5], true);
   }
+  if (p.suspicion !== undefined) {
+    // 붉은 눈 모양 바: 양 끝이 뾰족한 눈 꼴 트랙 위에 채움. 바 사각형을 돌려줘 상승 순간 흔들림 트윈을 건다
+    const eye = ui.scene.add.ellipse(susp.x + susp.w / 2, susp.y + susp.h / 2, susp.w + 10, susp.h + 8, SUSPICION_BAR.track).setStrokeStyle(1, 0x7a2a2a);
+    ui.layer.add(eye);
+    suspicionBar = box(ui, susp.x, susp.y, susp.w, susp.h, 0x2a1416, 1, 0x7a2a2a);
+    const ratio = Math.min(1, Math.max(0, p.suspicion / 100));
+    if (ratio > 0) box(ui, susp.x + 1, susp.y + 1, Math.max(1, Math.round((susp.w - 2) * ratio)), susp.h - 2, SUSPICION_BAR.fill);
+    label(ui, susp.x + susp.w + 8, susp.y + susp.h / 2, `의심 ${p.suspicion}`, FOCUS_BAR.labelSize, COLORS.danger, SUSPICION_BAR.labelW + 20, [0, 0.5], true);
+  }
   if (p.active) { box(ui, act.x, act.y, act.w, act.h, 0xe0b64f); label(ui, act.x + act.w / 2, act.y + act.h / 2, p.activeText, 13, COLORS.dark, act.w, [0.5, 0.5], true); }
   if (p.big && p.handCount !== undefined) oppHandLayout(reg, p.handCount, p.active).forEach((h, i) => { if (p.handVisible?.[i] === false) return; drawMiniBack(ui, h.x, h.y, h.w, h.h); });
-  return { scoreText, portrait };
+  return { scoreText, portrait, suspicionBar };
 }
 
 export type CapturedOptions = {

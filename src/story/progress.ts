@@ -1,6 +1,7 @@
 // 진행 상태와 저장(localStorage). 순수 함수로 상태를 바꾸고, 저장 실패는 무시한다. Phaser에 의존하지 않는다.
 import { type Chapter, type ChapterId, chapterById, isChapterId, nextChapterId } from './chapters.ts';
-import { COFFEE_DISCOUNT, FLAGS, type ItemId, isItemId, itemById } from './items.ts';
+import { COFFEE_DISCOUNT, FLAGS, GEAR_SLOTS, type ItemId, isItemId, itemById } from './items.ts';
+import { banKey } from './suspicion.ts';
 import { type PlaceId, isPlaceId } from './places.ts';
 import type { SerinState } from './serin.ts';
 import { type SkillId, isSkillId } from './skills.ts';
@@ -22,6 +23,8 @@ export type Progress = {
   serin: SerinState;
   /** 셀 수 있는 값(장소별 일반 대결 승수 등). */
   counters: Record<string, number>;
+  /** 장착한 장비(최대 GEAR_SLOTS=2). 장착한 것은 가방에서 빠진다. */
+  gear: ItemId[];
 };
 
 export const STORAGE_KEY = 'hwatu.progress.v1';
@@ -36,7 +39,7 @@ export const MA_ENTRY_WINS = 2;
 
 export const initialSerin = (): SerinState => ({ affinity: 0, visits: 0, lastEventDay: 0, lastVisitDay: 0, pity: 0, seen: [] });
 export function initialProgress(): Progress {
-  return { day: 1, money: START_MONEY, chapterId: 'prologue', unlockedPlaces: ['barber'], skills: [], focusMax: FOCUS_BASE, focus: FOCUS_BASE, flags: {}, bag: {}, serin: initialSerin(), counters: {} };
+  return { day: 1, money: START_MONEY, chapterId: 'prologue', unlockedPlaces: ['barber'], skills: [], focusMax: FOCUS_BASE, focus: FOCUS_BASE, flags: {}, bag: {}, serin: initialSerin(), counters: {}, gear: [] };
 }
 
 /** 저장소 추상화(테스트에서는 메모리 객체). */
@@ -75,6 +78,7 @@ export function deserialize(text: string): Progress | null {
       focusMax,
       focus: Math.min(focusMax, Math.max(0, Math.round(num(o.focus, focusMax)))),
       flags, bag, serin, counters,
+      gear: Array.isArray(o.gear) ? Array.from(new Set(o.gear.filter(isItemId))).slice(0, GEAR_SLOTS) : [],
     };
   } catch { return null; }
 }
@@ -93,7 +97,11 @@ export function resetProgress(storage: KV | undefined = defaultStorage()): Progr
 
 // ---- 집중력 ----
 /** 집 휴식: 집중력 전부 회복, 하루 경과. 첫 휴식은 '첫 귀가' 플래그(숙면 안대 해금). */
-export function rest(p: Progress): Progress { return { ...p, focus: p.focusMax, day: p.day + 1, flags: { ...p.flags, [FLAGS.homeFirstRest]: true } }; }
+export function rest(p: Progress): Progress {
+  const flags: Record<string, boolean> = { ...p.flags, [FLAGS.homeFirstRest]: true };
+  if (p.gear.includes('sleepMask')) flags[FLAGS.maskRested] = true; // 숙면 안대: 다음 대결 집중력 +30
+  return { ...p, focus: p.focusMax, day: p.day + 1, flags };
+}
 export function canSpendFocus(focus: number, cost: number): boolean { return cost >= 0 && focus >= cost; }
 /** 기술 사용: 비용 차감. 모자라면 차감하지 않고 그대로(0 미만이 되지 않는다). */
 export function spendFocus(focus: number, cost: number): number { return canSpendFocus(focus, cost) ? focus - cost : focus; }
@@ -142,9 +150,25 @@ export function useItemOnMap(p: Progress, id: ItemId): UseResult | null {
   const before = taken.focus;
   let next = it.focusFull ? withFocus(taken, taken.focusMax) : withFocus(taken, taken.focus + it.focus);
   if (id === 'canCoffee') next = { ...next, flags: { ...next.flags, [FLAGS.coffeeBoost]: true } };
+  if (id === 'luckyCoin') return { progress: setFlag(taken, FLAGS.coinBoost), focusDelta: 0, note: `${it.name}: 다음 바꿔치기 성공률 +15%p(최대 90%)` };
   const focusDelta = next.focus - before;
   return { progress: next, focusDelta, note: `${it.name}: 집중력 ${before} → ${next.focus}${id === 'canCoffee' ? ` · 다음 대결 첫 기술 비용 −${COFFEE_DISCOUNT}` : ''}` };
 }
+// ---- 장비(집에서만 장착·해제, 2칸) ----
+/** 장착: 가방에 있는 장비를 한 칸에 끼운다(가방에서 빠짐). 칸이 차거나 장비가 아니거나 가방에 없으면 null. */
+export function equipGear(p: Progress, id: ItemId): Progress | null {
+  if (itemById(id).kind !== 'gear' || p.gear.includes(id) || p.gear.length >= GEAR_SLOTS) return null;
+  const taken = takeFromBag(p, id);
+  return taken ? { ...taken, gear: [...taken.gear, id] } : null;
+}
+/** 해제: 가방으로 돌아간다. */
+export function unequipGear(p: Progress, id: ItemId): Progress | null {
+  if (!p.gear.includes(id)) return null;
+  return addToBag({ ...p, gear: p.gear.filter(g => g !== id) }, id);
+}
+// ---- 출입 금지(들통) ----
+export function isBanned(p: Progress, place: PlaceId): boolean { return p.flags[banKey(place, p.day)] === true; }
+export function banPlace(p: Progress, place: PlaceId): Progress { return setFlag(p, banKey(place, p.day)); }
 /** 대결 중 기술 비용: 캔커피 효과가 있으면 첫 기술 −10(0 미만 없음). */
 export function skillCostWithBoost(cost: number, boosted: boolean): number { return boosted ? Math.max(0, cost - COFFEE_DISCOUNT) : cost; }
 

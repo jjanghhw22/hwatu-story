@@ -6,7 +6,9 @@ import { SCENARIOS } from '../scenarios';
 import { CHAPTERS, type Chapter, chapterById, chapterLabel, placeOpensLabel } from '../story/chapters';
 import { FLAGS, type ItemId, itemById, shopItems } from '../story/items';
 import { PLACES, PLACE_IDS, type PlaceId, canSit, isPlaceReady } from '../story/places';
-import { COUNTERS, MA_ENTRY_WINS, type Progress, SEIZURE_NOTICE, bagCount, buyItem, canChallengeMa, counter, currentChapter, formatManWon, formatWon, formatWonDelta, isChapterDone, loadProgress, resetProgress, rest, saveProgress, setFlag, useItemOnMap } from '../story/progress';
+import { COUNTERS, MA_ENTRY_WINS, type Progress, SEIZURE_NOTICE, bagCount, buyItem, canChallengeMa, counter, currentChapter, equipGear, formatManWon, formatWon, formatWonDelta, isBanned, isChapterDone, loadProgress, resetProgress, rest, saveProgress, setFlag, unequipGear, useItemOnMap } from '../story/progress';
+import { GEAR_SLOTS } from '../story/items';
+import { noteMissing } from '../ui/missing';
 import { type SerinEventId, applyEvent, serinEventById, tierName, visitSerin } from '../story/serin';
 import { SKILLS } from '../story/skills';
 import { CardFx, FxSettings } from '../ui/fx';
@@ -18,9 +20,10 @@ import { SoundFx } from '../ui/sound';
 import { COLORS, FONT, type UI, box, button, label, panel } from '../ui/widgets';
 import { type JourneyLaunch, SCENE_KEYS, goJourney, playStory, startChapterMatch, startNormalMatch, startPractice, startTable } from './flow';
 
-type Modal = 'none' | 'place' | 'menu' | 'rules' | 'credits' | 'devinfo' | 'scenarios' | 'reward' | 'box' | 'shop' | 'bag' | 'notice' | 'choice' | 'noMoney';
-/** 노드 색: 열린 곳은 어두운 녹색 + 황동, 잠긴 곳은 회색. */
-const NODE = { open: 0x15302a, openEdge: 0xb08d4a, locked: 0x1c1c1a, lockedEdge: 0x444039, lockedText: '#6f6a60', link: 0x7a6236 } as const;
+type Modal = 'none' | 'place' | 'menu' | 'rules' | 'credits' | 'devinfo' | 'scenarios' | 'reward' | 'box' | 'shop' | 'bag' | 'notice' | 'choice' | 'noMoney' | 'gear';
+/** 노드 색: 열린 곳은 어두운 녹색 + 황동, 잠긴 곳은 회색, 오늘 출입 금지(들통)는 붉은 테두리. */
+const NODE = { open: 0x15302a, openEdge: 0xb08d4a, locked: 0x1c1c1a, lockedEdge: 0x444039, lockedText: '#6f6a60', link: 0x7a6236, banned: 0xc0392b } as const;
+const coverKey = (path: string) => `cover:${path}`;
 const PREPARING = '다음 이야기는 아직 준비 중';
 
 export class JourneyScene extends Phaser.Scene {
@@ -41,6 +44,12 @@ export class JourneyScene extends Phaser.Scene {
     this.launch = data; this.selected = data.openPlace; this.busy = false; this.choiceEvent = data.serinChoice;
     this.modal = data.reward || data.chapterDone ? 'reward' : data.serinChoice ? 'choice' : data.notice ? 'notice' : data.openPlace ? 'place' : 'none';
     if (data.notice) this.notice = data.notice;
+  }
+  /** 현재 장 대표 컷(없으면 어두운 패널). 읽기 실패는 조용히 기록. */
+  preload() {
+    const c = currentChapter(loadProgress());
+    if (c.cover && !this.textures.exists(coverKey(c.cover))) this.load.image(coverKey(c.cover), c.cover);
+    this.load.on('loaderror', (file: { key: string; src: string }) => { if (file.key.startsWith('cover:')) noteMissing(file.src); });
   }
   create() {
     this.progress = loadProgress();
@@ -67,6 +76,17 @@ export class JourneyScene extends Phaser.Scene {
     this.children.bringToTop(this.fx.layer);
     const ui = this.ui, p = this.progress, ch = this.chapter;
     box(ui, 0, 0, DESIGN.width, DESIGN.height, COLORS.bg);
+    // 0. 맨 위 현재 장 대표 컷(640×240): 그림이 있으면 비율 유지로 맞추고, 없으면 어두운 패널에 장 제목만
+    const C = JOURNEY.cover, cx0 = (DESIGN.width - C.w) / 2;
+    panel(ui, cx0, C.y, C.w, C.h, 'wood');
+    const ck = ch.cover ? coverKey(ch.cover) : undefined;
+    if (ck && this.textures.exists(ck)) {
+      const img = this.add.image(cx0 + C.w / 2, C.y + C.h / 2, ck);
+      img.setScale(Math.min((C.w - 16) / img.width, (C.h - 16) / img.height)); this.layer.add(img);
+    } else {
+      box(ui, cx0 + 8, C.y + 8, C.w - 16, C.h - 16, 0x0b0f0c);
+      label(ui, DESIGN.width / 2, C.y + C.h / 2, chapterLabel(ch), 22, COLORS.goldDim, C.w - 48, [0.5, 0.5], true);
+    }
     // 1. 머리: day · 소지금 · 현재 장 · 압류 예고(작게, 붉은 글자) · 집중력·기술 · 가방 버튼
     const H = JOURNEY.header;
     panel(ui, MARGIN, H.y, DESIGN.width - MARGIN * 2, H.h, 'wood');
@@ -86,9 +106,9 @@ export class JourneyScene extends Phaser.Scene {
     const r = JOURNEY.node.r, next = this.nextPlace;
     PLACE_IDS.forEach((id, i) => {
       const place = PLACES[id], { x, y } = pos[i];
-      const open = this.isOpen(id), isNext = id === next;
+      const open = this.isOpen(id), isNext = id === next, banned = isBanned(p, id);
       this.layer.add(this.add.circle(x, y + 3, r + 2, 0x000000, 0.45));
-      const circle = this.add.circle(x, y, r, open ? NODE.open : NODE.locked).setStrokeStyle(isNext ? JOURNEY.node.ring : 2, isNext ? 0xe0b64f : open ? NODE.openEdge : NODE.lockedEdge);
+      const circle = this.add.circle(x, y, r, open ? NODE.open : NODE.locked).setStrokeStyle(isNext || banned ? JOURNEY.node.ring : 2, banned ? NODE.banned : isNext ? 0xe0b64f : open ? NODE.openEdge : NODE.lockedEdge);
       this.layer.add(circle);
       label(ui, x, y, place.name, place.name.length > 4 ? 15 : 17, open ? COLORS.text : NODE.lockedText, r * 2 - 6, [0.5, 0.5], true).setName(`place:${id}`);
       if (!open) label(ui, x, y + r + JOURNEY.node.labelGap, placeOpensLabel(place.opensAt) ?? '', 12, NODE.lockedText, 160, [0.5, 0]);
@@ -129,6 +149,10 @@ export class JourneyScene extends Phaser.Scene {
         ], buttons: [close('place')] });
         return;
       }
+      if (isBanned(p, id)) {
+        drawModal(ui, { title: `${place.name} · 출입 금지`, alpha: 0.85, lines: [{ text: '오늘은 못 들어간다. 들통난 날은 하루 쉬어야 한다(집에서 쉬면 다음 날).', size: 16, color: COLORS.text }], buttons: [close('place')] });
+        return;
+      }
       const lines: ModalLine[] = [];
       const buttons: ModalButton[] = [];
       if (id === 'home' && this.nextIsPreparing) lines.push({ text: PREPARING, size: 16, color: COLORS.gold, bold: true });
@@ -144,6 +168,7 @@ export class JourneyScene extends Phaser.Scene {
       } else if (id === 'home') {
         buttons.push({ text: '휴식 (집중력 회복 · 다음 날)', onTap: () => this.restAtHome() });
         buttons.push({ text: '연습 대결', onTap: () => startPractice(this, 'barber') });
+        buttons.push({ text: `기술·장비 (장비 ${p.gear.length}/${GEAR_SLOTS})`, onTap: () => this.switchModal('place', 'gear') });
         buttons.push({ text: '아버지 물건 조사', onTap: () => this.switchModal('place', 'box') });
       } else if (id === 'store') {
         const ch2 = chapterById('ch2'), current = p.chapterId === 'ch2';
@@ -179,9 +204,22 @@ export class JourneyScene extends Phaser.Scene {
       const buttons: ModalButton[] = items.map(it => ({ text: `${it.name} · ${formatWon(it.price ?? 0)} · 보유 ${bagCount(p, it.id)}`, enabled: p.money >= (it.price ?? 0), onTap: () => this.buy(it.id) }));
       drawModal(ui, { title: '편의점 상점', alpha: 0.85, lines: [{ text: `소지금 ${formatWon(p.money)}`, size: 16, color: COLORS.gold, bold: true }, { text: items.map(it => `${it.name}: ${it.effect}`).join('\n'), size: 13 }], buttons: [...buttons, close('shop', 'place')] });
     }
+    if (this.modal === 'gear') {
+      // 집에서만: 배운 기술 목록(설명·비용) + 장비 2칸(가방의 장비를 장착/해제). 대결 중에는 바꿀 수 없다(이 창은 지도에서만 열린다)
+      const skillText = p.skills.length ? p.skills.map(s => `${SKILLS[s].name}(${SKILLS[s].cost}, 판당 ${SKILLS[s].usesPerMatch}회): ${SKILLS[s].desc}`).join('\n') : '배운 기술 없음';
+      const lines: ModalLine[] = [
+        { text: skillText, size: 13 },
+        { text: `장비 ${p.gear.length}/${GEAR_SLOTS}칸: ${p.gear.length ? p.gear.map(g => itemById(g).name).join(', ') : '없음'}`, size: 15, color: COLORS.gold, bold: true },
+      ];
+      const buttons: ModalButton[] = [];
+      for (const g of p.gear) buttons.push({ text: `해제 · ${itemById(g).name}`, onTap: () => this.toggleGear(g) });
+      for (const id of (Object.keys(p.bag) as ItemId[]).filter(x => bagCount(p, x) > 0 && itemById(x).kind === 'gear'))
+        buttons.push({ text: `장착 · ${itemById(id).name} — ${itemById(id).effect}`, enabled: p.gear.length < GEAR_SLOTS, onTap: () => this.toggleGear(id) });
+      drawModal(ui, { title: '기술·장비', alpha: 0.88, lines, buttons: [...buttons, close('gear', 'place')] });
+    }
     if (this.modal === 'bag') {
       const owned = (Object.keys(p.bag) as ItemId[]).filter(id => bagCount(p, id) > 0);
-      const buttons: ModalButton[] = owned.map(id => { const it = itemById(id); return { text: `${it.name} ×${bagCount(p, id)}${it.use === 'match' ? ' (대결 중 사용)' : it.use === 'map' ? ' · 사용' : ''}`, enabled: it.use === 'map', onTap: () => this.useItem(id) }; });
+      const buttons: ModalButton[] = owned.map(id => { const it = itemById(id); return { text: `${it.name} ×${bagCount(p, id)}${it.use === 'match' ? ' (대결 중 사용)' : it.use === 'gear' ? ' (집에서 장착)' : it.use === 'map' ? ' · 사용' : ''}`, enabled: it.use === 'map', onTap: () => this.useItem(id) }; });
       drawModal(ui, { title: '가방', alpha: 0.85, lines: [{ text: owned.length ? `집중력 ${p.focus}/${p.focusMax}` : '가방이 비었다.', size: 15, color: COLORS.text }], buttons: [...buttons, close('bag')] });
     }
     if (this.modal === 'notice') drawModal(ui, { title: this.notice.title, alpha: 0.85, lines: this.notice.lines.map(text => ({ text, size: 16, color: COLORS.text })), buttons: [close('notice')] });
@@ -246,6 +284,13 @@ export class JourneyScene extends Phaser.Scene {
     const it = itemById(id), next = buyItem(this.progress, id);
     if (!next) return;
     this.progress = next; this.save(); this.draw(); this.pulseMoney(-(it.price ?? 0));
+  }
+  /** 장비 장착/해제(집). 가방↔장비 칸 사이를 오간다. */
+  toggleGear(id: ItemId) {
+    if (this.modal !== 'gear') return;
+    const next = this.progress.gear.includes(id) ? unequipGear(this.progress, id) : equipGear(this.progress, id);
+    if (!next) return;
+    this.progress = next; this.save(); this.draw();
   }
   useItem(id: ItemId) {
     if (this.modal !== 'bag') return;

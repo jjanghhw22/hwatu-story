@@ -23,6 +23,8 @@ export type Chapter = {
   unlocks: PlaceId[];
   opponentId?: OpponentId;
   rewardSkill?: SkillId;
+  /** 지도 맨 위 대표 컷 그림 경로(없으면 어두운 패널에 장 제목만). */
+  cover?: string;
   /** 승리 후 집중력 최대치(바이블 6절). 없으면 그대로. */
   focusMaxAfter?: number;
   scenes: { before: Scene[]; after: Scene[] };
@@ -36,7 +38,7 @@ const placeholder = (text: string): Scene[] => [cut(undefined, text)];
 
 export const CHAPTERS: readonly Chapter[] = [
   {
-    id: 'prologue', no: 0, title: '봉투', place: 'home', unlocks: [],
+    id: 'prologue', no: 0, title: '봉투', cover: `${STORY_ASSET_DIR}/cover-prologue.png`, place: 'home', unlocks: [],
     scenes: {
       before: [
         cut('prologue-1.png', '전화 한 통.\n“아버님이… 연락이 안 되셔서요.”'),
@@ -48,7 +50,7 @@ export const CHAPTERS: readonly Chapter[] = [
     },
   },
   {
-    id: 'ch1', no: 1, title: '머리부터 자르고 와라', place: 'barber', unlocks: ['home', 'store'], opponentId: 'barber', rewardSkill: 'eye',
+    id: 'ch1', no: 1, title: '머리부터 자르고 와라', cover: `${STORY_ASSET_DIR}/cover-ch1.png`, place: 'barber', unlocks: ['home', 'store'], opponentId: 'barber', rewardSkill: 'eye',
     scenes: {
       before: [
         cut('ch1-barber.png', '보관증을 들고 대식에게 간다. 상자를 받으려면 한 판 이겨야 한다.'),
@@ -67,7 +69,7 @@ export const CHAPTERS: readonly Chapter[] = [
     },
   },
   {
-    id: 'ch2', no: 2, title: '새벽 두 시의 편의점', place: 'store', unlocks: ['bath'], opponentId: 'bamcha',
+    id: 'ch2', no: 2, title: '새벽 두 시의 편의점', cover: `${STORY_ASSET_DIR}/cover-ch2.png`, place: 'store', unlocks: ['bath'], opponentId: 'bamcha',
     scenes: {
       before: [
         cut('ch2-store.png', '집으로 가는 길에 불 켜진 편의점.'),
@@ -86,7 +88,7 @@ export const CHAPTERS: readonly Chapter[] = [
     },
   },
   {
-    id: 'ch3', no: 3, title: '목욕탕 뒤편의 작은 왕', place: 'bath', unlocks: ['market'], opponentId: 'ma', rewardSkill: 'calmFace',
+    id: 'ch3', no: 3, title: '목욕탕 뒤편의 작은 왕', cover: `${STORY_ASSET_DIR}/cover-ch3.png`, place: 'bath', unlocks: ['market'], opponentId: 'ma', rewardSkill: 'calmFace',
     scenes: {
       before: [
         cut('ch3-bath.png', '수첩의 첫 이름. 작은 판에서 이기고, 마 사장의 장부를 본다.'),
@@ -100,23 +102,23 @@ export const CHAPTERS: readonly Chapter[] = [
       ],
     },
   },
-  { id: 'ch4', no: 4, title: '시장에서는 웃는 사람이 무섭다', place: 'market', unlocks: ['harbor'], opponentId: 'bokhee', rewardSkill: 'lookAway', focusMaxAfter: 120,
+  { id: 'ch4', no: 4, title: '시장에서는 웃는 사람이 무섭다', cover: `${STORY_ASSET_DIR}/cover-ch4.png`, place: 'market', unlocks: ['harbor'], opponentId: 'bokhee', rewardSkill: 'lookAway', focusMaxAfter: 120,
     scenes: { before: placeholder('장부의 다음 흔적. 복희에게 사진 속 인물을 듣는다. (다음 단계)'), after: placeholder('“네 아버지는 왕을 이기려던 사람이 아니야.” (다음 단계)') } },
-  { id: 'ch5', no: 5, title: '친구라고 부르는 남자', place: 'harbor', unlocks: [], opponentId: 'bonggu', rewardSkill: 'swap',
+  { id: 'ch5', no: 5, title: '친구라고 부르는 남자', cover: `${STORY_ASSET_DIR}/cover-ch5.png`, place: 'harbor', unlocks: [], opponentId: 'bonggu', rewardSkill: 'swap',
     scenes: { before: placeholder('항구의 큰 판. 태오가 길을 열어 준다. (다음 단계)'), after: placeholder('바꿔치기. 의심도 게이지가 처음 보인다. (다음 단계)') } },
-  { id: 'ch6', no: 6, title: '이기고도 빚지는 밤', place: 'harbor', unlocks: [], opponentId: 'stranger',
+  { id: 'ch6', no: 6, title: '이기고도 빚지는 밤', cover: `${STORY_ASSET_DIR}/cover-ch6.png`, place: 'harbor', unlocks: [], opponentId: 'highroller',
     scenes: { before: placeholder('익명의 고액 판 상대 2명 연속. (다음 단계)'), after: placeholder('우승금 동결. 태오는 사라졌다. 돈 목표가 사라진다. (다음 단계)') } },
-  { id: 'ch7', no: 7, title: '편의점 뒷문', place: 'store', unlocks: ['billiards'], opponentId: 'sangcheol', rewardSkill: 'readThrough',
+  { id: 'ch7', no: 7, title: '편의점 뒷문', cover: `${STORY_ASSET_DIR}/cover-ch7.png`, place: 'store', unlocks: ['billiards'], opponentId: 'sangcheol', rewardSkill: 'readThrough',
     scenes: { before: placeholder('수금업자 ‘뱀눈’이 편의점 뒷문으로 온다. (다음 단계)'), after: placeholder('목표가 바뀐다 — 백운레저. (다음 단계)') } },
-  { id: 'ch8', no: 8, title: '돌아온 친구', place: 'billiards', unlocks: ['hotel'], opponentId: 'taeoh',
+  { id: 'ch8', no: 8, title: '돌아온 친구', cover: `${STORY_ASSET_DIR}/cover-ch8.png`, place: 'billiards', unlocks: ['hotel'], opponentId: 'taeoh',
     scenes: { before: placeholder('태오 재대결. 출입증과 정산 자료. (다음 단계)'), after: placeholder('“호텔에 있어. 그런데 네가 생각하는 모습은 아닐 거야.” (다음 단계)') } },
-  { id: 'ch9', no: 9, title: '흰 방의 아버지', place: 'hotel', unlocks: [], opponentId: 'father', rewardSkill: 'fold', focusMaxAfter: 140,
+  { id: 'ch9', no: 9, title: '흰 방의 아버지', cover: `${STORY_ASSET_DIR}/cover-ch9.png`, place: 'hotel', unlocks: [], opponentId: 'father', rewardSkill: 'fold', focusMaxAfter: 140,
     scenes: { before: placeholder('창문이 열리지 않는 방. 아버지와의 판. (다음 단계)'), after: placeholder('“한 판 지는 게 무서우면, 결국 다 잃을 때까지 앉아 있게 된다.” (다음 단계)') } },
-  { id: 'ch10', no: 10, title: '왕의 식탁', place: 'hotel', unlocks: [], opponentId: 'jeongho',
+  { id: 'ch10', no: 10, title: '왕의 식탁', cover: `${STORY_ASSET_DIR}/cover-ch10.png`, place: 'hotel', unlocks: [], opponentId: 'jeongho',
     scenes: { before: placeholder('세 문지기 3연전: 민정호·차유라·구상만. (다음 단계)'), after: placeholder('백무진 등장. 왕좌 제안. (다음 단계)') } },
-  { id: 'ch11', no: 11, title: '왕이 없는 밤', place: 'hotel', unlocks: [], opponentId: 'mujin',
+  { id: 'ch11', no: 11, title: '왕이 없는 밤', cover: `${STORY_ASSET_DIR}/cover-ch11.png`, place: 'hotel', unlocks: [], opponentId: 'mujin',
     scenes: { before: placeholder('백무진. 3단계 한 판. (다음 단계)'), after: placeholder('“한 번 더.” 고 / 스톱. (다음 단계)') } },
-  { id: 'epilogue', no: 12, title: '머리 자르는 날', place: 'barber', unlocks: [],
+  { id: 'epilogue', no: 12, title: '머리 자르는 날', cover: `${STORY_ASSET_DIR}/cover-epilogue.png`, place: 'barber', unlocks: [],
     scenes: { before: placeholder('이번에는 집에 돌아왔다. (다음 단계)'), after: [] } },
 ];
 

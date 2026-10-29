@@ -92,7 +92,7 @@ test('기술 8개·아이템 10개: id 유일, 수치는 바이블대로', () =>
 
 test('진행 상태: 시작값과 직렬화 왕복', () => {
   const p = initialProgress();
-  assert.deepEqual(p, { day: 1, money: 120000, chapterId: 'prologue', unlockedPlaces: ['barber'], skills: [], focusMax: 100, focus: 100, flags: {}, bag: {}, serin: { affinity: 0, visits: 0, lastEventDay: 0, lastVisitDay: 0, pity: 0, seen: [] }, counters: {} });
+  assert.deepEqual(p, { day: 1, money: 120000, chapterId: 'prologue', unlockedPlaces: ['barber'], skills: [], focusMax: 100, focus: 100, flags: {}, bag: {}, serin: { affinity: 0, visits: 0, lastEventDay: 0, lastVisitDay: 0, pity: 0, seen: [] }, counters: {}, gear: [] });
   const back = deserialize(serialize({ ...p, skills: ['eye'], unlockedPlaces: ['barber', 'home', 'store'], chapterId: 'ch2', flags: { 'ch1.done': true }, focus: 60 }));
   assert.deepEqual(back, { ...p, skills: ['eye'], unlockedPlaces: ['barber', 'home', 'store'], chapterId: 'ch2', flags: { 'ch1.done': true }, focus: 60 });
 });

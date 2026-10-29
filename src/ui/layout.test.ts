@@ -206,9 +206,16 @@ test('상대 손패 뒷면·점수 배지·말풍선 자리·차례 상자는 �
     const sb = skillBarLayout(REGIONS.skillBar, n);
     assert.equal(sb.buttons.length, n);
     for (const b of sb.buttons) { assert.equal(b.w, 140); assert.ok(inside(b, REGIONS.skillBar)); assert.ok(b.x + b.w < sb.bag.x, '기술 버튼이 가방 버튼과 겹치지 않음'); }
-    assert.ok(inside(sb.bag, REGIONS.skillBar) && inside(sb.preview, REGIONS.skillBar));
-    if (n < 4) assert.ok(sb.preview.x + sb.preview.w <= sb.bag.x, '공개 패 자리도 가방 버튼 앞');
+    assert.ok(inside(sb.bag, REGIONS.skillBar) && inside(sb.preview, sb.previewInBar ? REGIONS.skillBar : REGIONS.table));
+    if (n < 4) assert.ok(sb.previewInBar && sb.preview.x + sb.preview.w <= sb.bag.x, '공개 패 자리도 가방 버튼 앞');
   }
+  // 장비 버튼 2개가 있으면 기술 버튼 폭을 줄여(최소 96) 기술 4개 + 장비 2개 + 가방이 한 줄에 겹치지 않는다. 공개 패 자리가 없으면 화투판 구석으로
+  const g = skillBarLayout(REGIONS.skillBar, 4, 2);
+  assert.equal(g.gear.length, 2);
+  const all = [...g.buttons, ...g.gear, g.bag];
+  for (let i = 1; i < all.length; i++) assert.ok(all[i - 1].x + all[i - 1].w < all[i].x || all[i].x + all[i].w < all[i - 1].x, `기술 줄 ${i} 겹침`);
+  for (const b of g.buttons) assert.ok(b.w >= 96 && inside(b, REGIONS.skillBar));
+  assert.ok(!g.previewInBar && inside(g.preview, REGIONS.table) && inside(g.preview2, REGIONS.table));
 });
 
 test('긴 화면: configureLayout이 높이·안전 여백에 따라 영역을 다시 계산하고 1280에서는 기존 값과 같다', () => {

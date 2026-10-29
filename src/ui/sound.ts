@@ -9,7 +9,9 @@
 // 저음 몸통(thump)은 쓰지 않는다. 멜로디·전자음·긴 잔향 없음. 마스터 저역 통과는 7kHz(먹먹함 방지), 압축기로 합산 볼륨 제한.
 // 브라우저 정책상 첫 사용자 입력 뒤에 unlock()을 불러야 소리가 난다. 켜기/끄기는 localStorage에 기억한다.
 // 합성음이므로 실제 화투 녹음과는 차이가 있다. 아래 수치는 청취로 조정하는 시작점이며 이번 변경은 직접 듣고 확인하지 않았다.
-export type SoundKind = 'select' | 'deal' | 'flip' | 'capture' | 'ttadak' | 'bomb' | 'combo';
+export type SoundKind = 'select' | 'deal' | 'flip' | 'capture' | 'ttadak' | 'bomb' | 'combo' | 'bell';
+/** 흔들기 종: 2kHz 사인 한 번, 짧은 감쇠(멜로디 없음). */
+const BELL = { freq: 2000, attack: 0.002, decay: 0.25, vol: 0.22 } as const;
 const STORAGE_KEY = 'hwatu.sound';
 /** 같은 종류가 이 간격 안에 다시 요청되면 무시한다(여러 장 획득 시 중첩으로 커지는 것 방지). */
 const MIN_GAP_MS = 60;
@@ -25,7 +27,7 @@ const HITS = {
   combo: { attack: 0.0012, decay: 0.026, band: 3600, q: 1.6, vol: 0.34 },
 } satisfies Record<string, Hit>;
 /** 종류별 타격 순서(시작 시각 오프셋 초, 파라미터). 한 종류는 한 번의 play로 모두 예약된다. */
-const PATTERNS: Record<SoundKind, { at: number; hit: Hit }[]> = {
+const PATTERNS: Record<Exclude<SoundKind, 'bell'>, { at: number; hit: Hit }[]> = {
   select: [{ at: 0, hit: HITS.select }],
   deal: [{ at: 0, hit: HITS.deal }],
   flip: [{ at: 0, hit: HITS.flip }],
@@ -72,7 +74,19 @@ export class SoundFx {
     if (now - (this.lastAt[kind] ?? -Infinity) < MIN_GAP_MS) return;
     this.lastAt[kind] = now;
     const t = this.ctx.currentTime;
+    if (kind === 'bell') { this.tone(t, BELL.freq, BELL.attack, BELL.decay, BELL.vol); return; }
     for (const p of PATTERNS[kind]) this.hit(t + p.at, p.hit);
+  }
+  /** 사인 한 음(종): 빠른 어택 뒤 지수 감쇠. 잡음 타격과 달리 음정이 있지만 한 음뿐이라 멜로디는 아니다. */
+  private tone(t: number, freq: number, attack: number, decay: number, vol: number) {
+    const ctx = this.ctx!, out = this.master!;
+    const osc = ctx.createOscillator(); osc.type = 'sine'; osc.frequency.value = freq;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + attack);
+    g.gain.exponentialRampToValueAtTime(0.001, t + attack + decay);
+    osc.connect(g).connect(out); osc.start(t); osc.stop(t + attack + decay + 0.01);
+    this.sources.add(osc as unknown as AudioBufferSourceNode); osc.onended = () => this.sources.delete(osc as unknown as AudioBufferSourceNode);
   }
   /** 예약된 타격을 모두 멈춘다(새 판·씬 종료). 타격은 0.2초 미만이라 보통 들을 새도 없지만 이전 판의 예약이 남지 않게 한다. */
   cancel() {

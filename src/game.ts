@@ -8,7 +8,7 @@ export const GO_STOP_THRESHOLD = 7;
 export const BOMB_FLIP_CHANCES = 2;
 /** 판 결과. 스톱한 쪽이 즉시 승자. 양쪽 행동이 모두 소진될 때까지 승자가 없으면 나가리(박·정산 없음, 배수 이월 없음). */
 export type RoundResult =
-  | { outcome: '승리'; winner: number; base: number; goCount: number; settled: number; baks: BakKind[]; multiplier: number; declared: Declared[]; declMultiplier: number; final: number }
+  | { outcome: '승리'; winner: number; base: number; goCount: number; settled: number; baks: BakKind[]; multiplier: number; declared: Declared[]; declMultiplier: number; final: number; /** 합의 종료(들통·접기)로 끝난 판: 박·선언 배수 없이 승자 기본 점수의 고 공식만 적용. */ forfeit?: boolean }
   | { outcome: '나가리' };
 export function newDeck(random: () => number = Math.random): Card[] {
   const cards = [...CARDS];
@@ -333,6 +333,31 @@ export class GameState {
     this.result={outcome:'승리',winner:player,base:s.base,goCount:s.goCount,settled:s.goPoints,baks:s.baks,multiplier:s.multiplier,declared:s.declared,declMultiplier:s.declMultiplier,final:s.final};
     this.version+=1;
     return this.result;
+  }
+  /**
+   * 합의 종료(들통·접기): 규칙 변경이 아니라 종료 사유 추가. loser가 즉시 지고 승자는 자기 기본 점수에 고 공식(settlementPoints)만 적용한 점수를 받는다(박·선언 배수 없음).
+   * 이미 끝난 판에서는 거부한다. 결과에 forfeit 표시가 남는다.
+   */
+  forfeit(loser:0|1):RoundResult{
+    if(this.over)throw new Error('이미 끝난 판입니다.');
+    const winner=1-loser, base=this.baseScore(winner), goCount=this.goCount[winner], settled=settlementPoints(base,goCount);
+    this.result={outcome:'승리',winner,base,goCount,settled,baks:[],multiplier:1,declared:[],declMultiplier:1,final:settled,forfeit:true};
+    this.version+=1;
+    return this.result;
+  }
+  /**
+   * 바꿔치기(기술, 상태 동작 추가): 자기 차례에 손패 한 장을 더미 윗장과 맞바꾼다. 순수한 배열 교환이라 48장이 보존되고 version이 1 오른다(기존 계획은 무효).
+   * 판이 끝났거나 자기 차례가 아니거나 더미가 비었거나 손패에 없는 카드면 거부한다. 성공 확률·의심도는 화면 계층(story)이 정한다.
+   */
+  swapHandWithDeck(player:number,cardId:number):{given:Card;taken:Card}{
+    if(this.over)throw new Error('이미 끝난 판입니다.');
+    if(this.currentPlayer!==player)throw new Error('자기 차례에만 바꿀 수 있습니다.');
+    if(this.deck.length===0)throw new Error('더미가 비어 바꿀 수 없습니다.');
+    const i=this.hands[player].findIndex(c=>c.id===cardId);
+    if(i<0)throw new Error('손패에 없는 카드입니다.');
+    const given=this.hands[player][i], taken=this.deck[0];
+    this.hands[player][i]=taken;this.deck[0]=given;this.version+=1;
+    return {given,taken};
   }
   /** 양쪽 남은 행동이 모두 소진됐는데 승자가 없으면 나가리로 끝낸다. 기본 점수 우열로 승자를 정하지 않는다. */
   settleIfExhausted():RoundResult|null{
