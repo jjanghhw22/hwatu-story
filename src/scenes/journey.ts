@@ -3,13 +3,13 @@
 import Phaser from 'phaser';
 import { seededRng } from '../rng';
 import { SCENARIOS } from '../scenarios';
-import { CH5_RAMEN_SCENES, CH7_COURIER, CH7_VISITOR, CHAPTERS, type ChapterId, GIFT_SCENES, SERIN_LAST_ITEM, SERIN_ROUTE_ASK, SERIN_ROUTE_REPLY, type Chapter, NIGHT_CH6_SCENES, chapterById, chapterLabel, isChapterImplemented, placeOpensLabel } from '../story/chapters';
+import { CH5_RAMEN_SCENES, CH7_COURIER, CH7_VISITOR, CHAPTERS, type ChapterId, GIFT_SCENES, SERIN_LAST_ITEM, SERIN_ROUTE_ASK, SERIN_ROUTE_REPLY, TAEOH_STAKE_SCENES, type Chapter, NIGHT_CH6_SCENES, chapterById, chapterLabel, isChapterImplemented, placeOpensLabel } from '../story/chapters';
 import { ERRANDS, type ErrandId, canChallengeBokhee, completeErrand, errandById, errandsDone, isErrandDone } from '../story/errands';
 import { FLAGS, type ItemId, itemById, shopItems } from '../story/items';
-import { PLACES, PLACE_IDS, type PlaceId, canSit, isPlaceReady } from '../story/places';
-import { BONGGU_ENTRY_WINS, COUNTERS, MA_ENTRY_WINS, type Progress, addMoney, completeChapter, addToBag, canChallengeBonggu, isDebtFrozen, isNightLocked, winsKey, SEIZURE_NOTICE, bagCount, buyItem, canChallengeMa, counter, currentChapter, equipGear, formatManWon, formatWon, formatWonDelta, isBanned, isChapterDone, loadProgress, resetProgress, rest, saveProgress, setFlag, unequipGear, useItemOnMap } from '../story/progress';
+import { MIN_STAKE_POINTS, PLACES, PLACE_IDS, type PlaceId, canSit, isPlaceReady } from '../story/places';
+import { BONGGU_ENTRY_WINS, COUNTERS, MA_ENTRY_WINS, type Progress, SAFETY_NET, TAEOH_STAKED_FLAG, addMoney, canTaeohStake, completeChapter, addToBag, canChallengeBonggu, isDebtFrozen, isNightLocked, winsKey, SEIZURE_NOTICE, bagCount, buyItem, canChallengeMa, counter, currentChapter, equipGear, formatManWon, formatWon, formatWonDelta, isBanned, isChapterDone, loadProgress, resetProgress, rest, saveProgress, setFlag, unequipGear, useItemOnMap } from '../story/progress';
 import { GEAR_SLOTS } from '../story/items';
-import { GATES, type GateNo, type SerinRoute, canChallengeGate, gateFlag, routeStep, setRoute } from '../story/gates';
+import { CHARM_FLAG, GATES, type GateNo, type SerinRoute, canChallengeGate, ch10Pointer, gateFlag, routeStep, setRoute } from '../story/gates';
 import { ENDING_TITLES, endingsSeen, progressAtChapter } from '../story/endings';
 import { OPPONENTS } from '../story/opponents';
 import { CHARACTERS } from '../character';
@@ -78,7 +78,7 @@ export class JourneyScene extends Phaser.Scene {
   /** 열린 장소 = 진행에서 해금됐고 그 장의 이야기가 구현된 곳. */
   isOpen(id: PlaceId) { return this.progress.unlockedPlaces.includes(id) && isPlaceReady(id); }
   /** 다음 목적지: 현재 장의 무대. 아직 잠겨 있으면(구현 전) 집. */
-  get nextPlace(): PlaceId { const ch = this.chapter; return isChapterImplemented(ch.id) && this.isOpen(ch.place) && !isChapterDone(this.progress, ch.id) ? ch.place : 'home'; }
+  get nextPlace(): PlaceId { const ch = this.chapter; const g = ch10Pointer(this.progress); if (g && this.isOpen(g)) return g; return isChapterImplemented(ch.id) && this.isOpen(ch.place) && !isChapterDone(this.progress, ch.id) ? ch.place : 'home'; }
   get nextIsPreparing() { if (endingsSeen(this.progress).length) return false; return !isChapterImplemented(this.chapter.id) || (this.nextPlace === 'home' && this.chapter.place !== 'home'); }
   save() { saveProgress(this.progress); }
   /** 소지금 변화 "+N원/−N원"을 머리 패널의 소지금 글자 옆에 띄운다. */
@@ -128,6 +128,7 @@ export class JourneyScene extends Phaser.Scene {
       label(ui, x, y, place.name, place.name.length > 4 ? 15 : 17, open ? COLORS.text : NODE.lockedText, r * 2 - 6, [0.5, 0.5], true).setName(`place:${id}`);
       if (!open) label(ui, x, y + r + JOURNEY.node.labelGap, placeOpensLabel(place.opensAt) ?? '', 12, NODE.lockedText, 160, [0.5, 0]);
       if (isNext) label(ui, x - r - 14, y, '▶', 22, COLORS.gold, 40, [1, 0.5], true);
+      if (isNext && id === 'store' && ch10Pointer(p) === 'store') label(ui, x, y + r + JOURNEY.node.labelGap, '서린이 잠깐 들르래.', 12, COLORS.gold, 200, [0.5, 0]);
       circle.setInteractive({ useHandCursor: true }).on('pointerdown', () => this.openPlace(id));
     });
     // 3. 아래 메뉴
@@ -228,6 +229,7 @@ export class JourneyScene extends Phaser.Scene {
         buttons.push({ text: '아버지 물건 조사', onTap: () => this.switchModal('place', 'box') });
       } else if (id === 'store') {
         const ch2 = chapterById('ch2'), current = p.chapterId === 'ch2';
+        lines.push({ text: `하루 첫 방문 호감 +1 — ${p.serin.lastVisitDay >= p.day ? '오늘 들름 ✓' : '오늘 아직'}`, size: 12, color: COLORS.muted });
         lines.push({ text: `서린 호감 ${p.serin.affinity}  ·  방문 ${p.serin.visits}회`, size: 13, color: COLORS.goldDim });
         buttons.push({ text: '서린과 대화', onTap: () => this.talkSerin() });
         buttons.push({ text: '상점', onTap: () => this.switchModal('place', 'shop') });
@@ -261,6 +263,7 @@ export class JourneyScene extends Phaser.Scene {
         const ch9 = chapterById('ch9'), done = isChapterDone(p, 'ch9');
         if (!done) buttons.push({ text: '흰 방의 아버지(9장)', onTap: () => startChapterMatch(this, ch9), enabled: p.chapterId === 'ch9' });
         // 10장 초대전: 민정호 → 차유라 → 구상만 순서대로 열린다(판 사이에 나가서 쉬어도 된다). 장 대결·판돈 0·미션 있음
+        if (p.chapterId === 'ch10' && p.flags[CHARM_FLAG] !== true) lines.push({ text: '초대전은 서린을 만난 뒤에 열린다. (지도의 ▶ 편의점)', size: 13, color: COLORS.goldDim });
         if (p.chapterId === 'ch10') ([1, 2, 3] as GateNo[]).forEach(n => {
           const won = p.flags[gateFlag(n)] === true, name = CHARACTERS[OPPONENTS[GATES[n - 1]].characterId];
           buttons.push({ text: `${won ? '✓ ' : ''}초대전 ${n} — ${name.name} ‘${name.nickname ?? ''}’`, onTap: () => startTable(this, { chapterId: 'ch10', opponentId: GATES[n - 1], practice: false, stake: 0, placeId: 'hotel', gate: n }), enabled: canChallengeGate(p, n) });
@@ -324,8 +327,8 @@ export class JourneyScene extends Phaser.Scene {
     if (this.modal === 'noMoney' && this.noMoneyPlace) {
       const place = PLACES[this.noMoneyPlace];
       drawModal(ui, { title: '판에 앉을 돈이 없다', alpha: 0.85, lines: [
-        { text: `${place.name}은 1점 ${formatWon(place.stakePerPoint)} 판이라 최소 ${formatWon(place.stakePerPoint * 7)}이 있어야 앉을 수 있다. 지금 ${formatWon(p.money)}.`, size: 16, color: COLORS.text },
-        { text: '집에서 쉬고 편의점의 서린을 찾아가면 길이 열린다(야간 근무 식사).', size: 14 },
+        { text: `${place.name}은 1점 ${formatWon(place.stakePerPoint)} 판이라 최소 ${formatWon(place.stakePerPoint * MIN_STAKE_POINTS)}이 있어야 앉을 수 있다. 지금 ${formatWon(p.money)}.`, size: 16, color: COLORS.text },
+        { text: `소지금 ${formatWon(SAFETY_NET.belowMoney)} 미만일 때 집에서 쉬면, 다음 편의점 방문에서 서린이 야간 근무 식사(+${formatWon(SAFETY_NET.mealMoney)})를 챙겨 준다.`, size: 14 },
       ], buttons: [close('noMoney')] });
     }
     if (this.modal === 'box') {
@@ -371,7 +374,7 @@ export class JourneyScene extends Phaser.Scene {
       if (sk) lines.push({ text: `${sk.desc}. 집중력 ${sk.cost}, 판당 ${sk.usesPerMatch}회.`, size: 16, color: COLORS.text });
       if (this.launch.unlocked?.length) lines.push({ text: `새로 열린 곳: ${this.launch.unlocked.map(u => PLACES[u].name).join(', ')}`, size: 15, color: COLORS.gold });
       if (ch) lines.push({ text: `${chapterLabel(ch)} 완료.`, size: 13 });
-      drawModal(ui, { title: sk ? `${sk.name}를 배웠다` : ch ? `${ch.title} 완료` : '진행', alpha: 0.85, lines, buttons: [{ text: '확인', onTap: () => this.switchModal('reward', 'none') }] });
+      drawModal(ui, { title: sk ? `${sk.name}를 배웠다` : ch ? `${ch.title} 완료` : '진행', alpha: 0.85, lines, buttons: [{ text: '확인', onTap: () => this.closeReward() }] });
     }
     if (this.modal === 'menu') {
       const on = this.sfx.enabled, reduced = this.fxSettings.reduced;
@@ -408,10 +411,18 @@ export class JourneyScene extends Phaser.Scene {
     }
   }
   // ---- 행동 ----
-  /** 일반 대결: 소지금이 판돈 × 7 미만이면 안내만. */
+  /** 일반 대결: 소지금이 판돈 × 3 미만이면 안내만. 5장 첫 항구 판은 태오가 판돈을 대 준다(지면 손실 0, 이기면 정상 획득). */
   sitNormal(id: PlaceId) {
     if (this.modal !== 'place') return;
-    if (!canSit(this.progress.money, PLACES[id].stakePerPoint)) { this.noMoneyPlace = id; this.modal = 'noMoney'; this.draw(); return; }
+    const p = this.progress;
+    if (!canSit(p.money, PLACES[id].stakePerPoint)) {
+      if (canTaeohStake(p, id)) {
+        this.progress = setFlag(p, TAEOH_STAKED_FLAG); this.save();
+        playStory(this, chapterLabel(chapterById('ch5')), TAEOH_STAKE_SCENES, s => startTable(s, { practice: false, opponentId: 'stranger', stake: PLACES.harbor.stakePerPoint, placeId: 'harbor', staked: true }));
+        return;
+      }
+      this.noMoneyPlace = id; this.modal = 'noMoney'; this.draw(); return;
+    }
     startNormalMatch(this, id);
   }
   buy(id: ItemId) {
@@ -468,6 +479,14 @@ export class JourneyScene extends Phaser.Scene {
     if (this.modal !== 'kingChoice') return;
     this.progress = completeChapter(this.progress, chapterById('ch10')); this.save();
     this.launch = { chapterDone: 'ch10' }; this.modal = 'reward'; this.draw();
+  }
+  /** 보상 창 닫기: 장 대결 승리로 끝났으면 밤이 지나간다(집 휴식과 같은 효과 + "다음 날" 전환, 6장 제외 — 요청 11-C). */
+  closeReward() {
+    if (this.modal !== 'reward') return;
+    const night = this.launch.nightAfter === true;
+    this.launch = { ...this.launch, nightAfter: false };
+    this.modal = 'none';
+    if (night) this.runRest(); else this.draw();
   }
   /** 심부름 시작: 물건 찾기는 before 장면 → 상인과 한 판(판돈 0), 돕기는 before 장면 → 선택 창, 단서는 장면 → 완료. */
   startErrand(id: ErrandId) {

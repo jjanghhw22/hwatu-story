@@ -43,6 +43,11 @@ export const DEBT_FROZEN_FLAG = 'debt.frozen';
 export const BONGGU_ENTRY_WINS = 1;
 /** 마 사장 대결 입장: 목욕탕 일반 대결 승수. */
 export const MA_ENTRY_WINS = 2;
+/** 안전망(요청 11-A): 소지금이 이 금액 미만일 때 집에서 쉬면, 다음 편의점 방문의 서린 사건을 '야간 근무 식사'로 확정하고 금액을 5만 원으로 올린다. */
+export const SAFETY_NET = { belowMoney: 100000, mealMoney: 50000, flag: 'serin.mealPinned' } as const;
+/** 5장 첫 항구 판(요청 11-A): 소지금이 입장 조건에 못 미치면 태오가 판돈을 대 준다(1회). 지면 손실 0, 이기면 정상 획득. */
+export const TAEOH_STAKED_FLAG = 'taeoh.staked';
+export function canTaeohStake(p: Progress, place: PlaceId): boolean { return place === 'harbor' && p.chapterId === 'ch5' && p.flags[TAEOH_STAKED_FLAG] !== true; }
 
 export const initialSerin = (): SerinState => ({ affinity: 0, visits: 0, lastEventDay: 0, lastVisitDay: 0, pity: 0, seen: [] });
 export function initialProgress(): Progress {
@@ -107,6 +112,7 @@ export function resetProgress(storage: KV | undefined = defaultStorage()): Progr
 export function rest(p: Progress): Progress {
   const flags: Record<string, boolean> = { ...p.flags, [FLAGS.homeFirstRest]: true, [NIGHT_LOCK_FLAG]: false };
   if (p.gear.includes('sleepMask')) flags[FLAGS.maskRested] = true; // 숙면 안대: 다음 대결 집중력 +30
+  if (p.money < SAFETY_NET.belowMoney) flags[SAFETY_NET.flag] = true; // 안전망: 다음 편의점 방문은 식사 사건(+5만 원)
   return { ...p, focus: p.focusMax, day: p.day + 1, flags };
 }
 export function canSpendFocus(focus: number, cost: number): boolean { return cost >= 0 && focus >= cost; }
@@ -122,6 +128,8 @@ export function addMoney(p: Progress, delta: number): { progress: Progress; appl
 }
 /** 일반 대결 정산: 최종 점수 × 판돈을 승자가 가져간다(진 쪽은 가진 만큼만). 나가리·판돈 0이면 0. */
 export function settleStake(final: number, stakePerPoint: number, won: boolean): number { return stakePerPoint > 0 ? (won ? 1 : -1) * final * stakePerPoint : 0; }
+/** 판돈 정산(태오가 댄 판 포함): 태오가 댄 판에서 지면 0(판돈은 태오 몫), 나머지는 settleStake 그대로. */
+export function settleStakeStaked(final: number, stakePerPoint: number, won: boolean, staked: boolean): number { return staked && !won ? 0 : settleStake(final, stakePerPoint, won); }
 export function counter(p: Progress, key: string): number { return p.counters[key] ?? 0; }
 export function bump(p: Progress, key: string, by = 1): Progress { return { ...p, counters: { ...p.counters, [key]: counter(p, key) + by } }; }
 /** 마 사장 대결 입장: 목욕탕 일반 대결 2승 + 3장이 현재 장. */

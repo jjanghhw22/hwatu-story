@@ -29,6 +29,6 @@ export const PLACE_IDS = Object.keys(PLACES) as PlaceId[];
 export const isPlaceId = (v: unknown): v is PlaceId => typeof v === 'string' && v in PLACES;
 /** 장소의 이야기가 구현됐는지(열리는 장이 구현된 장인지). 진행 데이터상 열렸어도 구현 전이면 지도에서 잠긴 채 "N장에서 열림"으로 보인다. */
 export function isPlaceReady(id: PlaceId): boolean { const at = PLACES[id].opensAt; return at === 'start' || isChapterImplemented(at); }
-/** 일반 대결 입장 조건: 소지금이 판돈 × 7 이상(판돈 0이면 항상). */
-export const MIN_STAKE_POINTS = 7;
+/** 일반 대결 입장 조건: 소지금이 판돈 × 3 이상(판돈 0이면 항상). 요청 11-A: ×7은 운에 따라 5장 진행이 막혀 ×3으로. */
+export const MIN_STAKE_POINTS = 3;
 export function canSit(money: number, stakePerPoint: number): boolean { return stakePerPoint <= 0 || money >= stakePerPoint * MIN_STAKE_POINTS; }

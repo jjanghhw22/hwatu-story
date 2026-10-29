@@ -4,7 +4,7 @@
 import { type Rng, pickIndex } from '../rng.ts';
 import { type Scene, chapterOrder } from './chapters.ts';
 import { FLAGS } from './items.ts';
-import { type Progress, addMoney, addToBag, setFlag, withFocus } from './progress.ts';
+import { type Progress, SAFETY_NET, addMoney, addToBag, setFlag, withFocus } from './progress.ts';
 
 export type SerinState = {
   /** 관계 점수. 방문(+1, 하루 1회)·대화 선택(+1~2)·약속 이행(+3)으로만 오른다. */
@@ -123,7 +123,9 @@ export function visitSerin(p: Progress, rng: Rng): VisitResult {
     }
     const cands = eventCandidates({ ...p, serin: s });
     if (cands.length) {
-      event = cands[pickIndex(rng, cands.length)];
+      // 안전망: 돈이 모자라 쉰 다음의 방문은 '야간 근무 식사'로 확정(applyEvent에서 +5만 원·플래그 해제)
+      const pinned = p.flags[SAFETY_NET.flag] === true ? cands.find(e => e.id === 'meal') : undefined;
+      event = pinned ?? cands[pickIndex(rng, cands.length)];
       tier = rollTier(rng, s.pity);
       const rare = isRareOrBetter(tier);
       s = { ...s, lastEventDay: p.day, seen: s.seen.includes(event.id) ? s.seen : [...s.seen, event.id], pity: rare ? 0 : s.pity + 1 };
@@ -145,9 +147,11 @@ const bumpAff = (q: Progress, by: number): Progress => ({ ...q, serin: { ...q.se
 export function applyEvent(p: Progress, id: SerinEventId, choice: EventChoice = 'none'): EventResult {
   const none = (q: Progress, notice: string[]): EventResult => ({ progress: q, moneyDelta: 0, focusDelta: 0, notice });
   if (id === 'meal') {
-    const m = addMoney(p, MEAL_MONEY);
+    const pinned = p.flags[SAFETY_NET.flag] === true; // 안전망이면 5만 원, 평소 2만 원
+    const m = addMoney(p, pinned ? SAFETY_NET.mealMoney : MEAL_MONEY);
     const before = m.progress.focus;
-    const next = bumpAff(withFocus(m.progress, before + MEAL_FOCUS), AFFINITY.talk);
+    let next = bumpAff(withFocus(m.progress, before + MEAL_FOCUS), AFFINITY.talk);
+    if (pinned) next = setFlag(next, SAFETY_NET.flag, false);
     return { progress: next, moneyDelta: m.applied, focusDelta: next.focus - before, notice: [`집중력 ${before} → ${next.focus}`, `${formatPlus(m.applied)} (손님이 두고 간 거야)`] };
   }
   if (id === 'textbook') {

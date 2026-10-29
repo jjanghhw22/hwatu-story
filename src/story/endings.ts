@@ -17,9 +17,9 @@ export const ENDING_SCENES: Record<EndingId, Scene[]> = {
 };
 /**
  * 에필로그(엔딩 A만, 바이블 그대로): 아버지 → 대식 → 복희 → 태오(수락: 시장 배송 / 거절: 항구를 떠남) → 서린 복학 → 편의점 봉투 → 이발소 → "이번에는 집에 돌아왔다."
- * 봉투: route 'slow'이고 호감 ≥ 12면 영화표, 아니면 손편지(friend·slow) / 작별 선물(distance). 세 갈래 모두 같은 길이(4장면)로 실패처럼 보이지 않게.
+ * 봉투: route 'slow'이고 호감 ≥ 10이면 영화표(요청 11-C: 정상 진행 호감을 계산해 12에서 낮춤), 아니면 손편지(friend·slow) / 작별 선물(distance). 세 갈래 모두 같은 길이(4장면)로 실패처럼 보이지 않게.
  */
-export const MOVIE_AFFINITY = 12;
+export const MOVIE_AFFINITY = 10;
 export type Envelope = 'movie' | 'letter' | 'farewell';
 export function envelopeOf(route: SerinRoute, affinity: number): Envelope { return route === 'slow' && affinity >= MOVIE_AFFINITY ? 'movie' : route === 'distance' ? 'farewell' : 'letter'; }
 const ENVELOPE: Record<Envelope, Scene[]> = {
@@ -46,7 +46,7 @@ export function epilogueScenes(route: SerinRoute, affinity: number, taeohAccepte
 /** 크레딧(간단히 컷으로 넘김). */
 export const CREDITS_SCENES: Scene[] = [
   cut('마지막 패\n— 왕이 없는 밤 —'),
-  cut('기획·이야기: jjanghhw22\n구현: Claude Code'),
+  cut('기획·이야기·제작: jjanghhw22'),
   cut('화투 도안: Marcus Richert (based on artwork by Louie Mantia, Jr.)\nWikimedia Commons, CC BY-SA 4.0'),
   cut('글꼴: 나눔고딕·나눔붓 (NHN Corporation, SIL OFL 1.1)\n엔진: Phaser 3 (MIT)'),
   cut('플레이해 주셔서 고맙습니다.'),

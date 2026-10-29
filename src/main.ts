@@ -10,7 +10,7 @@ import {CHARACTERS,type Character,MOODS,type Mood,PLAYER} from './character';
 import {type Chapter,ch8Choice,chapterById,chapterLabel,chapterWinVariant} from './story/chapters';
 import {OPPONENTS,type OpponentProfile,resolveOpponent} from './story/opponents';
 import {SKILLS,type SkillId} from './story/skills';
-import {type Progress,addMoney,banPlace,bump,winsKey,canSpendFocus,formatWon,formatWonDelta,loadProgress,saveProgress,setFlag,settleStake,skillCostWithBoost,spendFocus,takeFromBag,withFocus} from './story/progress';
+import {type Progress,addMoney,banPlace,bump,winsKey,canSpendFocus,formatWon,formatWonDelta,loadProgress,saveProgress,setFlag,settleStakeStaked,TAEOH_STAKED_FLAG,skillCostWithBoost,spendFocus,takeFromBag,withFocus} from './story/progress';
 import {FLAGS,itemById} from './story/items';
 import {provokedPolicy} from './story/policies';
 import {type TauntState,afterGoStop,calm,markShown,newTauntState,pickTaunt,shouldTaunt} from './story/taunt';
@@ -269,7 +269,7 @@ class TableScene extends Phaser.Scene {
     // 7장: 잡기로 이기면 원본/아니면 사본, 9장: 접었는지/이겼는지에 따라 after 앞 장면과 플래그가 다르다
     const r=this.state.result;
     const won=r?.outcome==='승리'&&r.winner===0, folded=r?.outcome==='승리'&&r.endKind==='fold';
-    finishChapterWin(this,this.chapter,chapterWinVariant(this.chapter.id,{caught:r?.outcome==='승리'&&r.endKind==='caught',folded,untaught:this.chapter.id==='ch9'&&!this.foldTaught,lost:!won&&!folded}));
+    finishChapterWin(this,this.chapter,chapterWinVariant(this.chapter.id,{caught:r?.outcome==='승리'&&r.endKind==='caught',folded,untaught:this.chapter.id==='ch9'&&!this.foldTaught,lost:!won&&!folded,staked:loadProgress().flags[TAEOH_STAKED_FLAG]===true}));
   }
   /** 10장 초대전 승리: 다음 문이 열린다. 셋째(구상만)를 이기면 백무진 등장 장면 → 지도의 선택 창. */
   finishGate(){
@@ -304,7 +304,7 @@ class TableScene extends Phaser.Scene {
     if(this.launch.scenario)return;
     const r=this.state.result;
     let p=withFocus(loadProgress(),this.focus);
-    if(r?.outcome==='승리'&&this.stake>0){const m=addMoney(p,settleStake(this.finalPoints(r),this.stake,r.winner===0));p=m.progress;this.moneyDelta=m.applied;}
+    if(r?.outcome==='승리'&&this.stake>0){const m=addMoney(p,settleStakeStaked(this.finalPoints(r),this.stake,r.winner===0,this.launch.staked===true));p=m.progress;this.moneyDelta=m.applied;}
     if(r?.outcome==='승리'&&r.winner===0&&this.stake>0&&this.launch.placeId&&!this.chapter&&!this.launch.errand)p=bump(p,winsKey(this.launch.placeId)); // 장소별 일반 대결 승수(목욕탕 → 마 사장, 항구 → 봉구)
     saveProgress(p);
   }

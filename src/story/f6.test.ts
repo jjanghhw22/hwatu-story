@@ -7,7 +7,7 @@ import { seededRng } from '../rng.ts';
 import { dealSetup } from '../sim.ts';
 import { CH9_FOLD, CH9_WIN, chapterById, chapterWinVariant } from './chapters.ts';
 import { CREDITS_SCENES, ENDING_SCENES, MOVIE_AFFINITY, endingFlag, endingScenes, endingsSeen, envelopeOf, epilogueScenes, progressAtChapter, recordEnding } from './endings.ts';
-import { CHARM_RESET, GATES, applyCharm, canChallengeGate, consumeBlock, fakeShake, gatesWon, nextGate, routeFlag, routeStep, serinRoute, setRoute, winGate } from './gates.ts';
+import { CHARM_FLAG, CHARM_RESET, GATES, applyCharm, canChallengeGate, consumeBlock, fakeShake, gatesWon, nextGate, routeFlag, routeStep, serinRoute, setRoute, winGate } from './gates.ts';
 import { itemById } from './items.ts';
 import { KING, KING_CHEAT_3, KING_CHEAT_4, nextKingStage, skillCounterKey, stageCheat, stageCutIn, stageLocks, topSkills } from './king.ts';
 import { TEACH_FOLD, shouldTeachFold } from './learner.ts';
@@ -33,6 +33,8 @@ test('접기 가르치기 세 경로: 판 중(아버지 5~6·고 0) / 고 중이
 test('10장 문지기: 순서대로 열림, 민정호 항상 스톱, 차유라 가짜 흔들기는 상태를 바꾸지 않음, 구상만 봉쇄 3회 뒤 정상', () => {
   assert.deepEqual(GATES, ['jeongho', 'yura', 'sangman']);
   let p = { ...initialProgress(), chapterId: 'ch10' as const };
+  assert.ok(!canChallengeGate(p, 1), '부적 전에는 초대전 1 잠김');
+  p = setFlag(p, CHARM_FLAG);
   assert.equal(nextGate(p), 1); assert.ok(canChallengeGate(p, 1) && !canChallengeGate(p, 2));
   p = winGate(p, 1); assert.ok(canChallengeGate(p, 2) && !canChallengeGate(p, 3));
   p = winGate(winGate(p, 2), 3); assert.equal(nextGate(p), null); assert.equal(gatesWon(p), 3);
@@ -61,8 +63,10 @@ test('서린의 부적: 판당 1회 100 → 70', () => {
   assert.equal(itemById('serinCharm').kind, 'gear'); assert.equal(itemById('serinCharm').price, null);
 });
 
-test('관계 분기: 부적을 받은 뒤 두 번째 방문, 호감 8 이상이면 선택, 아니면 friend, 1회', () => {
-  const base = setFlag({ ...initialProgress(), chapterId: 'ch10' as const }, 'ch10.charm');
+test('관계 분기: 부적을 받고 초대전 2까지 이긴 뒤, 호감 8 이상이면 선택, 아니면 friend, 1회', () => {
+  const charm = setFlag({ ...initialProgress(), chapterId: 'ch10' as const }, CHARM_FLAG);
+  assert.equal(routeStep({ ...charm, serin: { ...charm.serin, affinity: 9 } }), 'none', '초대전 2를 이기기 전에는 없음');
+  const base = winGate(winGate(charm, 1), 2);
   assert.equal(routeStep({ ...base, serin: { ...base.serin, affinity: 8 } }), 'ask');
   assert.equal(routeStep({ ...base, serin: { ...base.serin, affinity: 7 } }), 'default');
   assert.equal(routeStep({ ...initialProgress(), chapterId: 'ch10' }), 'none', '부적 전에는 없음');

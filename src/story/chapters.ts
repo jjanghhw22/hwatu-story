@@ -274,12 +274,21 @@ export const CH7_VISITOR: Scene[] = [cut('ch7-visitor.png', '계산대 너머로
 export const CH7_COURIER: Scene[] = [line('seorin', '박 기사님, 이 사람 좀 봐 줘요. 손 빠른 사람 잡는 법.'), line('courier', '한 판 치면서 보여 주지. 눈은 손이 아니라 더미를 봐.')];
 /** 9장 뒤 첫 편의점 방문: 서린 사건 '오래된 선물'. */
 export const GIFT_SCENES: Scene[] = [line('seorin', '이거, 네 아버지가 맡긴 건가 봐.'), cut('gift-watch.png', '낡은 회중시계. 뚜껑 안쪽에 작은 글씨.')];
+/** 5장 항구 일반 판에 소지금이 모자랄 때(1회): 태오가 판돈을 대 준다. 입장 창 대신 이 장면 → 판(지면 손실 0, 이기면 정상 획득). */
+export const TAEOH_STAKE_SCENES: Scene[] = [
+  line('taeoh', '첫 판은 내가 대지. 친구잖아.'),
+  cut(undefined, '지면 잃을 돈이 없고, 따면 전부 도윤의 몫이다.'),
+];
+/** 6장 정산 장면 앞 한 줄(태오가 5장 판돈을 대 줬을 때). */
+export const CH6_STAKED_LINE = '그 판돈도 네 이름으로 올라가 있더라.';
 /** 5장 편의점 앞 컵라면 셋(5장 진행 중 편의점 첫 방문 때 1회). */
 export const CH5_RAMEN_SCENES: Scene[] = [
   cut('ch5-ramen.png', '편의점 앞 컵라면 셋.'),
   line('seorin', '저 사람은 웃을 때 대답을 안 해.'),
 ];
 export const isChapterImplemented = (id: ChapterId) => IMPLEMENTED_CHAPTERS.includes(id);
+/** 장 대결 승리로 장이 끝나면 밤이 지나간다(집 휴식과 같은 효과 + "다음 날" 전환, 요청 11-C). 6장은 '그날 밤' 흐름이 그 역할을 하고, 10·11장은 같은 밤에 이어진다. */
+export function nightAfterWin(id: ChapterId): boolean { return id !== 'prologue' && id !== 'epilogue' && id !== 'ch6' && id !== 'ch10' && id !== 'ch11'; }
 export const isChapterId = (v: unknown): v is ChapterId => typeof v === 'string' && CHAPTERS.some(c => c.id === v);
 export function chapterById(id: ChapterId): Chapter { return CHAPTERS.find(c => c.id === id)!; }
 /** 다음 장 id. 마지막(에필로그)이면 그대로. */
@@ -299,7 +308,9 @@ export function placeOpensLabel(opensAt: 'start' | ChapterId): string | null {
 }
 
 /** 장 승리 방식별 after 앞 장면과 플래그: 7장(잡기로 이기면 원본, 아니면 사본), 9장(접으면 끄덕임, 이기면 다른 한 줄). 9장은 접기·승리 모두 완료. */
-export function chapterWinVariant(id: ChapterId, how: { caught?: boolean; folded?: boolean; untaught?: boolean; lost?: boolean }): { prefix: Scene[]; flags: string[] } {
+export function chapterWinVariant(id: ChapterId, how: { caught?: boolean; folded?: boolean; untaught?: boolean; lost?: boolean; staked?: boolean }): { prefix: Scene[]; flags: string[] } {
+  // 6장: 5장 판돈을 태오가 대 줬으면 정산 장면 앞에 한 줄
+  if (id === 'ch6') return { prefix: how.staked ? [line('taeoh', CH6_STAKED_LINE)] : [], flags: [] };
   if (id === 'ch7') return how.caught ? { prefix: CH7_ORIGINAL, flags: ['ch7.original'] } : { prefix: CH7_COPY, flags: ['ch7.copy'] };
   if (id === 'ch9') {
     // 판에서 가르칠 순간이 한 번도 안 왔으면 after 앞에 "불리할 땐 접는 거다."로 가르치고 9장을 끝낸다(진행이 막히지 않게, 진 판이어도)

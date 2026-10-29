@@ -1,6 +1,6 @@
 // 씬 사이의 흐름(지도 ↔ 이야기 ↔ 대결). 씬은 키 문자열로 서로를 시작하며, 이 모듈이 넘길 데이터 형태를 정한다.
 import type Phaser from 'phaser';
-import { type Chapter, type ChapterId, type Scene, chapterLabel } from '../story/chapters';
+import { type Chapter, type ChapterId, type Scene, chapterLabel, nightAfterWin } from '../story/chapters';
 import type { OpponentId } from '../story/opponents';
 import { PLACES, type PlaceId, isPlaceReady } from '../story/places';
 import { completeChapter, loadProgress, saveProgress } from '../story/progress';
@@ -26,6 +26,8 @@ export type TableLaunch = {
   gate?: GateNo;
   /** 11장 마지막 선택에서 '고' → 무진 4단계 추가 승부. */
   kingFinal?: boolean;
+  /** 5장 첫 항구 판: 태오가 판돈을 댔다(지면 손실 0, 이기면 정상 획득). */
+  staked?: boolean;
 };
 /** 이야기 화면 시작 데이터. 마지막 장면 뒤 onDone이 다음 단계로 보낸다. */
 export type StoryLaunch = { label: string; scenes: Scene[]; onDone: (scene: Phaser.Scene) => void };
@@ -46,6 +48,8 @@ export type JourneyLaunch = {
   finalChoice?: boolean;
   /** 10장 서린 관계 분기 선택 창. */
   routeChoice?: boolean;
+  /** 장 대결 승리로 장이 끝났다: 보상 창을 닫으면 밤이 지나간다(6장 제외). */
+  nightAfter?: boolean;
 };
 
 export const SCENE_KEYS = { boot: 'boot', journey: 'journey', story: 'story', table: 'table' } as const;
@@ -72,7 +76,7 @@ export function finishChapterWin(scene: Phaser.Scene, c: Chapter, extra: { prefi
     let after = completeChapter(before, c);
     for (const f of extra.flags ?? []) after = { ...after, flags: { ...after.flags, [f]: true } };
     saveProgress(after);
-    goJourney(s, { chapterDone: c.id, reward: c.rewardSkill, unlocked: after.unlockedPlaces.filter(p => !before.unlockedPlaces.includes(p) && isPlaceReady(p)) });
+    goJourney(s, { chapterDone: c.id, reward: c.rewardSkill, unlocked: after.unlockedPlaces.filter(p => !before.unlockedPlaces.includes(p) && isPlaceReady(p)), nightAfter: nightAfterWin(c.id) });
   });
 }
 /** 큰 판 다음 판: 짧은 컷 → 같은 설정으로 2판째. */

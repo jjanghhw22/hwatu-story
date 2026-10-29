@@ -57,7 +57,7 @@ test('아이템 효과: 삼각김밥 +20(최대치 상한), 캔커피 전부 회
   assert.equal(skillCostWithBoost(20, true), 10); assert.equal(skillCostWithBoost(5, true), 0); assert.equal(skillCostWithBoost(20, false), 20);
 });
 
-test('돈: 0 아래로 내려가지 않고, 판돈 정산은 최종 점수 × 판돈, 입장은 판돈 × 7', () => {
+test('돈: 0 아래로 내려가지 않고, 판돈 정산은 최종 점수 × 판돈, 입장은 판돈 × 3', () => {
   const p = initialProgress();
   assert.equal(addMoney(p, -200000).progress.money, 0);
   assert.equal(addMoney(p, -200000).applied, -120000);
@@ -65,7 +65,7 @@ test('돈: 0 아래로 내려가지 않고, 판돈 정산은 최종 점수 × �
   assert.equal(settleStake(12, PLACES.bath.stakePerPoint, true), 120000);
   assert.equal(settleStake(12, 10000, false), -120000);
   assert.equal(settleStake(12, 0, true), 0);
-  assert.ok(canSit(70000, 10000) && !canSit(69999, 10000) && canSit(0, 0));
+  assert.ok(canSit(30000, 10000) && !canSit(29999, 10000) && canSit(0, 0));
   assert.deepEqual([PLACES.bath, PLACES.market, PLACES.harbor, PLACES.hotel, PLACES.barber, PLACES.home].map(x => x.stakePerPoint), [10000, 20000, 50000, 200000, 0, 0]);
 });
 
