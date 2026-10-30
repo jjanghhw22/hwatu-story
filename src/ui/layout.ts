@@ -16,8 +16,8 @@ export const GAP = 10;
 /** 화면 아래 기본 안전 여백. 손패가 화면 끝에 붙지 않게 한다(기기 홈바 여백은 configureLayout의 insets.bottom으로 더해진다). */
 export const BOTTOM_SAFE = 20;
 
-/** 카드 그림의 가로:세로 비율(원본 테두리 103.2:168.2). 화면의 모든 카드 사각형은 이 비율을 따른다. */
-export const CARD_ASPECT = 103.2 / 168.2;
+/** 카드 그림의 가로:세로 비율(골목간판풍 카드 400×600, 2:3). 화면의 모든 카드 사각형은 이 비율을 따른다. */
+export const CARD_ASPECT = 2 / 3;
 const sized = (h: number) => ({ w: Math.round(h * CARD_ASPECT), h });
 
 /** 손패 주 줄(아랫줄) 최대 장수. 7장째부터는 윗줄에 왼쪽 정렬. */
@@ -27,7 +27,7 @@ const HAND_CARD_H = Math.min(196, Math.floor(((DESIGN.width - MARGIN * 2 - (HAND
 
 /** 카드 크기. 손패 > 바닥패 > 획득 패(미니). 높이만 정하고 폭은 비율로 계산한다. */
 export const CARD = {
-  hand: sized(HAND_CARD_H),                                 // 105×171
+  hand: sized(HAND_CARD_H),                                 // 105×157
   floor: { ...sized(130), stackDx: 0.3, stackMax: 3 },      // 바닥패 높이 상한 130. 같은 월 묶음: 폭의 30%씩 옆으로 비껴 겹침, 자리는 3장 묶음 폭까지 확보
   mini: { ...sized(64), step: 14, minStep: 4 },             // 획득 패: 세로로 겹친 더미처럼. 기본 비낌 14, 묶음 폭이 모자라면 최소 4까지 줄임(크기는 유지)
   peek: sized(40),
@@ -41,9 +41,9 @@ export const CAPTURED_H = 84;
 const TOP_H = 40, OPP_INFO_H = 84, MY_INFO_H = 76;
 /** 기술 줄(내 정보 아래): 기술 버튼(최대 5개) + 맨 오른쪽 가방 버튼. 버튼 높이 44, 이름 18. */
 export const SKILL_BAR_H = 52;
-/** 1280 기준 화투판 높이(464). 글자를 키우며 내 정보·기술 줄이 24 늘어난 만큼 1280에서는 화투판이 줄어든다. */
+/** 1280 기준 화투판 높이(2:3 카드로 손패 두 줄이 낮아져 492). 기준(488)을 넘는 몫은 손패 위 여백으로 돌린다. */
 export const TABLE_H_BASE = BASE_HEIGHT - TOP_H - OPP_INFO_H - CAPTURED_H - MY_INFO_H - SKILL_BAR_H - CAPTURED_H - (HAND_TOP_PAD + CARD.hand.h * 2 + GAP + BOTTOM_SAFE);
-/** v0.21까지의 화투판 기준 높이. 긴 화면에서는 손패 위 여백 몫에서 먼저 이만큼을 화투판에 돌려준다. */
+/** 화투판 기준 높이(v0.21부터). 1280에서는 이 값으로 맞추고, 차이(±)는 손패 위 여백과 주고받는다. */
 export const TABLE_H_NOMINAL = 488;
 /** 늘어난 높이의 배분 비율: 화투판 70%, 손패 위 여백 30%. */
 export const EXTRA_SPLIT = { table: 0.7, handPad: 0.3 } as const;
@@ -86,7 +86,7 @@ export function configureLayout(height: number, insets: SafeInsets = { top: 0, b
   const extra = DESIGN.height - BASE_HEIGHT - top - bottom;
   let tableExtra = extra >= 0 ? Math.round(extra * EXTRA_SPLIT.table) : extra;
   let padExtra = extra >= 0 ? extra - tableExtra : 0;
-  // 글자 키우기로 줄어든 화투판 몫은 손패 위 여백(30%)에서 먼저 돌려받는다
+  // 화투판을 기준 높이(488)에 맞춘다: 모자라면 손패 위 여백(30%)에서 돌려받고, 넘치면(2:3 카드로 +4) 여백에 넘긴다
   const giveBack = Math.min(padExtra, TABLE_H_NOMINAL - TABLE_H_BASE);
   padExtra -= giveBack; tableExtra += giveBack;
   LAYOUT.insets = { top, bottom };
@@ -207,6 +207,36 @@ export function speechZone(reg: Rect = REGIONS.oppInfo): Rect {
   const sb = scoreBadgeRect(reg, true);
   return { x: INFO.split, y: reg.y + 6, w: sb.x - SPEECH.gapToBadge - INFO.split, h: SPEECH.h };
 }
+/**
+ * 상태 칩 한 줄 맞춤(정보 패널용): 칩은 패널 안 한 줄에만 둔다(둘째 줄은 기술 줄과 겹치므로 금지).
+ * ① 원래 글자로 한 줄에 들어가면 그대로 → ② 안 들어가면 전부 줄임말(없으면 원래 글자) → ③ 그래도 넘치면
+ * 뒤 칩들을 "+N" 한 개로 묶는다(앞에서부터 들어가는 만큼만 보임). kept = 원래 칩 중 보이는 수(그 뒤 텍스트는 "+N").
+ * measure는 글자 폭 측정 함수(화면은 measureText, 테스트는 고정 폭). 순수 함수.
+ */
+export function fitChipsOneRow(chips: readonly { text: string; short?: string }[], measure: (t: string) => number, x0: number, y: number, maxX: number): { rects: Rect[]; texts: string[]; kept: number } {
+  const { h, pad, gap } = INFO.chip;
+  const place = (texts: readonly string[]): Rect[] | null => {
+    const rects: Rect[] = []; let x = x0;
+    for (const t of texts) { const w = Math.round(measure(t) + pad); rects.push({ x, y, w, h }); x += w + gap; }
+    const last = rects[rects.length - 1];
+    return !last || last.x + last.w <= maxX ? rects : null;
+  };
+  const full = chips.map(c => c.text);
+  let rects = place(full);
+  if (rects) return { rects, texts: full, kept: chips.length };
+  const shorts = chips.map(c => c.short ?? c.text);
+  rects = place(shorts);
+  if (rects) return { rects, texts: shorts, kept: chips.length };
+  for (let kept = chips.length - 1; kept >= 0; kept--) {
+    const texts = [...shorts.slice(0, kept), `+${chips.length - kept}`];
+    rects = place(texts);
+    if (rects) return { rects, texts, kept };
+  }
+  // 마지막 수단: "+N" 한 개(이 폭마저 넘는 극단은 그대로 둔다 — 패널 세로는 지켜진다)
+  const t = `+${chips.length}`;
+  return { rects: [{ x: x0, y, w: Math.round(measure(t) + pad), h }], texts: [t], kept: 0 };
+}
+
 /** 상태 칩 흐름 배치: 글자 폭 배열을 받아 왼쪽부터 놓고 maxX를 넘으면 다음 줄(xRow부터). 순수 함수. */
 export function flowChips(textWidths: readonly number[], x0: number, y0: number, maxX: number, xRow: number = x0): Rect[] {
   const { h, pad, gap, rowGap } = INFO.chip;

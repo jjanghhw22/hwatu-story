@@ -4,15 +4,13 @@ import type { ModalLine } from './modals';
 import { COLORS } from './widgets';
 
 /** 빌드 표식. 메뉴 > 개발 정보에서만 보인다. 규칙·단계가 바뀔 때마다 올린다. */
-export const BUILD_TAG = 'v0.25 완주 보정';
+export const BUILD_TAG = 'v0.26 새 카드';
 /** 미구현 항목. 일반 화면에는 두지 않고 메뉴의 규칙 안내·개발 정보에서만 보여준다. */
 export const NOT_IMPLEMENTED = '멍박·총통·첫뻑·연속뻑 미적용';
 
 export const CREDITS: ModalLine[] = [
-  { text: '화투 도안', size: 18, color: COLORS.gold },
-  { text: '원작: Marcus Richert, based on artwork by Louie Mantia, Jr.\nSVG 최적화: Spenĉjo', size: 15, color: COLORS.text },
-  { text: '출처: https://commons.wikimedia.org/wiki/File:Hwatu_overview.svg\n라이선스: CC BY-SA 4.0', size: 13 },
-  { text: '· 전체 도안을 48장 PNG로 분리, 흰 바탕 추가, 11월 오동·12월 비 순서로 연결, 붉은 뒷면 추가', size: 13, color: COLORS.text },
+  { text: '화투 그림', size: 18, color: COLORS.gold },
+  { text: '골목간판풍 화투 48장 + 뒷면 (소유자 제작)', size: 15, color: COLORS.text },
   { text: '글꼴', size: 18, color: COLORS.gold },
   { text: '나눔고딕·나눔붓 (NHN Corporation, SIL Open Font License 1.1)\nassets/fonts/OFL.txt', size: 13, color: COLORS.text },
   { text: '엔진: Phaser 3 (MIT). 효과음은 외부 음원 없이 합성. 캐릭터 그림은 소유자 제공(장대식·한도윤 기본 표정), 나머지 인물·컷 그림은 자리 표시. 자세한 내용은 THIRD_PARTY_NOTICES.md.', size: 13 },

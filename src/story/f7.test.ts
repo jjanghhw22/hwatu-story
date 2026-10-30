@@ -105,5 +105,6 @@ test('D 크레딧: 기획·이야기·제작 한 줄, 구현 도구 줄 없음, 
   const texts = CREDITS_SCENES.map(s => s.text).join('\n');
   assert.ok(texts.includes('기획·이야기·제작: jjanghhw22'));
   assert.ok(!texts.includes('Claude'), '구현 도구 줄 제거');
-  assert.ok(texts.includes('Marcus Richert') && texts.includes('나눔고딕') && texts.includes('Phaser 3'), '라이선스 출처 유지');
+  assert.ok(texts.includes('골목간판풍') && texts.includes('나눔고딕') && texts.includes('Phaser 3'), '그림·라이선스 출처 유지(요청 12: 화투 그림은 골목간판풍)');
+  assert.ok(!texts.includes('Marcus Richert'), '위키미디어 도안은 더 이상 쓰지 않으므로 크레딧에서 제외');
 });

@@ -4,7 +4,7 @@ import type { GukjinChoice } from '../game';
 import type { Declared, Score } from '../score';
 import type { Character, Mood } from '../character';
 import { drawMiniBack, drawMiniCard } from './cardView';
-import { CAPTURED_EMPTY_ALPHA, CAPTURED_TAG_H, CHIP_COLORS, COUNT_BADGE, COUNT_ICON, type CapturedRects, FOCUS_BAR, INFO, MARGIN, type Rect, SUSPICION_BAR, TEXT_MIN, activeBoxRect, capturedRects, flowChips, focusBarRect, oppHandLayout, scoreBadgeRect, speechZone, suspicionBarRect, suspicionColor } from './layout';
+import { CAPTURED_EMPTY_ALPHA, CAPTURED_TAG_H, CHIP_COLORS, COUNT_BADGE, COUNT_ICON, type CapturedRects, FOCUS_BAR, INFO, MARGIN, type Rect, SUSPICION_BAR, TEXT_MIN, activeBoxRect, capturedRects, fitChipsOneRow, focusBarRect, oppHandLayout, scoreBadgeRect, speechZone, suspicionBarRect, suspicionColor } from './layout';
 import { type PortraitView, drawPortrait } from './portrait';
 import { COLORS, type UI, box, chip, countBadge, label, measureText, outlined, panel } from './widgets';
 
@@ -32,18 +32,18 @@ export type PlayerInfo = {
   extraChips?: StatusChip[];
 };
 
-export type StatusChip = { text: string; color: number; alpha?: number };
+export type StatusChip = { text: string; color: number; alpha?: number; /** 한 줄에 다 안 들어갈 때 쓰는 줄임말("뒤집기2", "국→쌍"). */ short?: string };
 /** 상태 칩 목록: 고 칩은 항상(0이면 흐리게), 나머지는 값이 있을 때만. 순수 함수. */
 export function statusChips(p: Pick<PlayerInfo, 'goCount' | 'declared' | 'flipChances' | 'gukjin' | 'ppeokCount'>): StatusChip[] {
   const decl = p.declared ?? [];
   const shakes = decl.filter(d => d.kinds.includes('흔들기')).length;
   const bombs = decl.filter(d => d.kinds.includes('폭탄')).length;
   const out: StatusChip[] = [{ text: `${p.goCount}고`, color: CHIP_COLORS.go, alpha: p.goCount > 0 ? 1 : 0.35 }];
-  if (shakes) out.push({ text: `흔들기 ${shakes}`, color: CHIP_COLORS.shake });
-  if (bombs) out.push({ text: `폭탄 ${bombs}`, color: CHIP_COLORS.bomb });
-  if (p.flipChances) out.push({ text: `뒤집기 ${p.flipChances}`, color: CHIP_COLORS.other });
-  if (p.gukjin) out.push({ text: `국진→${p.gukjin === '피' ? '쌍피' : '열끗'}`, color: CHIP_COLORS.other });
-  if (p.ppeokCount) out.push({ text: `뻑 ${p.ppeokCount}`, color: CHIP_COLORS.other });
+  if (shakes) out.push({ text: `흔들기 ${shakes}`, short: `흔${shakes}`, color: CHIP_COLORS.shake });
+  if (bombs) out.push({ text: `폭탄 ${bombs}`, short: `폭${bombs}`, color: CHIP_COLORS.bomb });
+  if (p.flipChances) out.push({ text: `뒤집기 ${p.flipChances}`, short: `뒤집기${p.flipChances}`, color: CHIP_COLORS.other });
+  if (p.gukjin) out.push({ text: `국진→${p.gukjin === '피' ? '쌍피' : '열끗'}`, short: p.gukjin === '피' ? '국→쌍' : '국→열', color: CHIP_COLORS.other });
+  if (p.ppeokCount) out.push({ text: `뻑 ${p.ppeokCount}`, short: `뻑${p.ppeokCount}`, color: CHIP_COLORS.other });
   return out;
 }
 /** 고·흔·폭 아이콘 자리 3개(기준작 "1고 ·1 ·1" 자리): 값과 색. 0이면 회색. 순수 함수. */
@@ -94,18 +94,18 @@ export function drawPlayerInfo(ui: UI, reg: Rect, p: PlayerInfo): PlayerInfoView
   const unit = label(ui, sb.x + sb.w - 10, sb.y + sb.h / 2 + 3, '점', 16, COLORS.gold, 30, [1, 0.5], true);
   const scoreText = label(ui, sb.x + sb.w - 10 - unit.width - 3, sb.y + sb.h / 2, String(p.score.total), 26, COLORS.gold, 80, [1, 0.5], true);
   const act = activeBoxRect(reg, p.big);
-  // 아이콘 3개(고·흔·폭) + 나머지 칩(뒤집기·국진·뻑)
+  // 아이콘 3개(고·흔·폭) + 나머지 칩(뒤집기·국진·뻑). 칩은 패널 안 한 줄에만 둔다(둘째 줄은 기술 줄과 겹침 — 요청 12-5)
   const chips = [...(p.extraChips ?? []), ...statusChips(p).slice(1).filter(c => !c.text.startsWith('흔들기') && !c.text.startsWith('폭탄'))];
-  const widths = chips.map(c => measureText(ui.scene, c.text, INFO.chip.size, true));
+  const measure = (t: string) => measureText(ui.scene, t, INFO.chip.size, true);
+  const drawChips = (fit: { rects: Rect[]; texts: string[]; kept: number }) =>
+    fit.rects.forEach((r, i) => { const src = i < fit.kept ? chips[i] : { color: CHIP_COLORS.other, alpha: 1 }; chip(ui, r, fit.texts[i], src.color, src.alpha ?? 1); });
   if (p.big) {
     const iconY = reg.y + reg.h - 6 - COUNT_ICON.d;
     const afterIcons = drawCountIcons(ui, xLeft, iconY, p);
-    const rects = flowChips(widths, afterIcons + 6, iconY + Math.round((COUNT_ICON.d - INFO.chip.h) / 2), speechZone(reg).x - 6);
-    chips.forEach((c, i) => chip(ui, rects[i], c.text, c.color, c.alpha ?? 1));
+    drawChips(fitChipsOneRow(chips, measure, afterIcons + 6, iconY + Math.round((COUNT_ICON.d - INFO.chip.h) / 2), speechZone(reg).x - 6));
   } else {
     drawCountIcons(ui, COUNT_ICON.myX, reg.y + 4, p);
-    const rects = flowChips(widths, COUNT_ICON.myX, reg.y + 4 + COUNT_ICON.d + 3, act.x - 6);
-    chips.forEach((c, i) => chip(ui, rects[i], c.text, c.color, c.alpha ?? 1));
+    drawChips(fitChipsOneRow(chips, measure, COUNT_ICON.myX, reg.y + 4 + COUNT_ICON.d + 3, act.x - 6));
   }
   let suspicionBar: Phaser.GameObjects.Rectangle | undefined;
   if (p.focus) {

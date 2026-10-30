@@ -1,11 +1,11 @@
 // 카드 그림 연결 정보. 손패·바닥패·획득패·다음 패 보기·국진 선택창·카드 목록이 모두 이 모듈만 사용한다.
-// 파일은 tools/split-cards.mjs가 hwatu-overview.svg에서 잘라 public/assets/cards/에 저장한다(THIRD_PARTY_NOTICES.md 참고).
+// 파일은 tools/prepare-cards.py가 골목간판풍 원본(art/cards-src/)에서 변환해 public/assets/cards/에 저장한다(THIRD_PARTY_NOTICES.md 참고).
 import type Phaser from 'phaser';
 import { CARDS } from '../cards.ts';
 
 export const CARD_ASSET_DIR = 'assets/cards';
-/** 원본 테두리 비율 103.2 : 168.2. 화면의 모든 카드 사각형은 이 비율을 따른다. */
-export const CARD_ASPECT = 103.2 / 168.2;
+/** 골목간판풍 카드 400×600(2:3). 화면의 모든 카드 사각형은 이 비율을 따른다. */
+export const CARD_ASPECT = 2 / 3;
 export const BACK_TEXTURE = { key: 'card-back', file: 'back.png' } as const;
 
 export function cardAssetFile(id: number) { return `card-${String(id).padStart(2, '0')}.png`; }

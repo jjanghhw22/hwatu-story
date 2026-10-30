@@ -1,25 +1,20 @@
 # 제3자 저작물 고지 (THIRD PARTY NOTICES)
 
-## 화투 카드 도안
+## 화투 카드 그림 (v0.26부터)
 
-- 원작: Marcus Richert, based on artwork by Louie Mantia, Jr.
-- SVG 최적화: Spenĉjo
-- 출처: https://commons.wikimedia.org/wiki/File:Hwatu_overview.svg
-- 라이선스: CC BY-SA 4.0 — https://creativecommons.org/licenses/by-sa/4.0/
-- 사용 파일: `hwatu-overview.svg`(원본, 프로젝트 루트), `public/assets/cards/card-00.png` ~ `card-47.png`, `public/assets/cards/back.png`, `public/assets/cards/cards.json`
+- 골목간판풍 화투 48장 + 뒷면: 프로젝트 소유자가 제작해 제공(2026-10-30, 원본 1024×1536 PNG 48장). 제3자 저작물이 아닙니다.
+- 사용 파일: `public/assets/cards/card-00.png` ~ `card-47.png`(400×600, 256색), `public/assets/cards/back.png`(같은 테두리 + 매화 문양), `public/assets/cards/cards.json`(연결표)
+- 변환: `tools/prepare-cards.py`(Pillow). 원본 파일 번호 n(01~48)이 카드 id n−1에 대응(`src/cards.ts` 슬롯 순서와 같음).
+- 재생성: `python tools/prepare-cards.py art/cards-src/<압축 푼 폴더> public/assets/cards` (원본은 용량 때문에 저장소에 커밋하지 않음 — `.gitignore`의 `art/`)
 
-### 이 프로젝트에서 수행한 분리·변환 내용
-1. 원본 SVG(1326×732)를 수정하지 않고 그대로 읽어 `@resvg/resvg-js`로 3배 크기(3978×2196)로 래스터화했습니다.
-2. 원본 안의 카드 테두리 도형(`id="a"`, 중심 기준 103.2×168.2)이 놓인 48개 위치를 기준으로 각 카드를 310×505 PNG로 잘라냈습니다. 도안은 카드별 그룹이 아니라 전체 좌표계에 그려져 있어, 동일 간격이 아닌 실제 테두리 좌표(12열×4행, 열 x = 51.6 … 1273.6, 행 y = 84.1 … 647.6)를 사용했습니다.
-3. 원본의 카드 안쪽은 검은 윤곽선만 있고 채움이 없어(흰 종이 위에 놓이는 전제), 렌더 전에 각 카드 안쪽 크기(90.6×153.8)의 흰 사각형을 도안 뒤에 끼워 넣었습니다. 그림과 글씨는 변경하지 않았습니다.
-4. 원본은 일본식 월 순서(11월=비, 12월=오동)이고 월 안의 카드 순서도 이 프로젝트의 데이터(광·띠·피·피 등)와 다르므로, 인덱스가 아니라 그림 내용 기준으로 이 프로젝트의 카드 ID(11월=오동, 12월=비)에 연결했습니다. 연결표는 `public/assets/cards/cards.json`과 `tools/split-cards.mjs`의 `MAP`에 있습니다.
-5. 뒷면 `back.png`는 원본의 테두리 도형(`id="a"`) 모양만 가져와 안쪽을 진한 붉은색으로 채운 파생 도안입니다. 원본에는 뒷면 도안이 없습니다.
-6. 재생성: 프로젝트 루트에서 `node tools/split-cards.mjs`.
+## 이전 버전(v0.25 이하)에서 사용한 화투 도안 — 더 이상 게임에 쓰지 않음(이력)
 
-위 파생물(잘라낸 PNG, 뒷면)은 원본과 같은 CC BY-SA 4.0 조건으로 제공합니다.
+- 원작: Marcus Richert, based on artwork by Louie Mantia, Jr. / SVG 최적화: Spenĉjo
+- 출처: https://commons.wikimedia.org/wiki/File:Hwatu_overview.svg — CC BY-SA 4.0
+- v0.25까지 `hwatu-overview.svg`를 `tools/split-cards.mjs`로 48장 PNG로 분리해 썼습니다(흰 바탕 추가, 일본식 월 순서를 내용 기준으로 재연결, 붉은 뒷면 파생). 두 파일은 참고용으로 저장소에 남아 있지만 빌드 결과물에는 포함되지 않습니다(`public/` 밖).
 
 ## 게임 크레딧 문구
-화투 도안: Marcus Richert, based on artwork by Louie Mantia, Jr.; SVG optimization by Spenĉjo. Source: Wikimedia Commons (Hwatu overview.svg). Licensed under CC BY-SA 4.0. 변경 내용: 전체 도안을 48장 PNG로 분리, 흰 바탕 추가, 뒷면 도안 추가.
+화투 그림: 골목간판풍(소유자 제작). 글꼴·엔진 출처는 아래와 같다.
 
 ## 엔진·라이브러리
 - Phaser 3 (MIT) — https://phaser.io

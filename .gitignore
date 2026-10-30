@@ -5,5 +5,5 @@ dist/
 .DS_Store
 Thumbs.db
 
-# 원본 자료 zip: GitHub 100MB 한도 초과로 커밋하지 않음(요청 11에서 제외)
-public/assets/cards/*.zip
+# 원본 자료(골목간판풍 zip·풀린 폴더): GitHub 100MB 한도 초과로 커밋하지 않음(요청 12에서 art/로 이동)
+art/

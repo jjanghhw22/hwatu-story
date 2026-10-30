@@ -21,27 +21,18 @@ test('48개 카드 ID 모두 그림 파일이 존재하고 키가 고유하다',
   assert.ok(fs.existsSync(path.join(DIR, BACK_TEXTURE.file)), '뒷면 없음');
 });
 
-test('cards.json 연결표는 카드 데이터와 월·슬롯이 일치하고 원본 테두리 좌표를 갖는다', () => {
+test('cards.json 연결표(골목간판풍): 월·슬롯·원본 번호가 카드 데이터와 일치하고 번호 중복이 없다', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(DIR, 'cards.json'), 'utf8'));
   assert.equal(manifest.cards.length, 48);
-  assert.ok(Math.abs(manifest.frame.w / manifest.frame.h - CARD_ASPECT) < 0.001, '카드 비율');
-  const used = new Set<string>();
+  assert.ok(Math.abs(manifest.frame.w / manifest.frame.h - CARD_ASPECT) < 0.001, '카드 비율 2:3');
+  const used = new Set<number>();
   for (const m of manifest.cards) {
     const c = CARDS[m.id];
     assert.equal(m.month, c.month); assert.equal(m.file, cardAssetFile(m.id));
-    assert.equal(m.id, (m.month - 1) * 4 + m.slot);
-    const key = `${m.source.row},${m.source.col}`;
-    assert.ok(!used.has(key), `원본 위치 중복: ${key}`); used.add(key);
-    assert.ok(m.source.row >= 0 && m.source.row < 4 && m.source.col >= 0 && m.source.col < 12);
+    assert.equal(m.id, (m.month - 1) * 4 + m.slot, '슬롯 순서 = src/cards.ts 순서');
+    // 원본 파일 번호 n(01~48)이 카드 id n−1에 그대로 대응
+    assert.equal(m.source.no, m.id + 1, `원본 번호: ${m.source.file}`);
+    assert.ok(String(m.source.file).startsWith(`골목간판풍_${String(m.source.no).padStart(2, '0')}_`), `원본 파일명: ${m.source.file}`);
+    assert.ok(!used.has(m.source.no), `원본 번호 중복: ${m.source.no}`); used.add(m.source.no);
   }
-  // 원본은 일본식 순서: 우리 11월(오동)은 원본 4행 9~12열, 우리 12월(비)은 원본 4행 5~8열
-  const ours = (month: number) => manifest.cards.filter((m: { month: number }) => m.month === month);
-  assert.ok(ours(11).every((m: { source: { row: number; col: number } }) => m.source.row === 3 && m.source.col >= 8));
-  assert.ok(ours(12).every((m: { source: { row: number; col: number } }) => m.source.row === 3 && m.source.col >= 4 && m.source.col < 8));
-  // 국진(9월 슬롯 0)은 원본 3행 9열(그룹 첫 장), 비광(12월 슬롯 0)은 4행 5열, 오동 쌍피(11월 슬롯 1)는 4행 11열
-  const at = (id: number) => manifest.cards.find((m: { id: number }) => m.id === id).source;
-  assert.deepEqual([at(32).row, at(32).col], [2, 8]);
-  assert.deepEqual([at(44).row, at(44).col], [3, 4]);
-  assert.deepEqual([at(41).row, at(41).col], [3, 10]);
-  assert.deepEqual([at(47).row, at(47).col], [3, 7]); // 비 쌍피
 });

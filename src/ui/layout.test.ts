@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BOTTOM_SAFE, CAPTURED_TAG_H, CARD, CARD_ASPECT, DESIGN, FLOOR_SLOTS, HAND_ARROW, HAND_MAIN_ROW, HAND_TOP_PAD, INFO, LAYOUT, REGIONS, SPEECH, activeBoxRect, capturedLayout, capturedOrder, capturedRects, configureLayout, fanDirection, floorLayout, flowChips, handLayout, miniStep, oppHandLayout, rotatedBounds, scoreBadgeRect, skillBarLayout, speechZone, tableInner, COUNT_ICON, FOCUS_BAR, MISSION_PANEL, SKILL_BAR, TABLE_H_NOMINAL, TABLE_MESSAGE, TEXT_MIN, bagPopupLayout, focusBarRect, suspicionBarRect, TABLE_MIN_H, skillRowsFor } from './layout.ts';
+import { BOTTOM_SAFE, CAPTURED_TAG_H, CARD, CARD_ASPECT, DESIGN, FLOOR_SLOTS, HAND_ARROW, HAND_MAIN_ROW, HAND_TOP_PAD, INFO, LAYOUT, REGIONS, SPEECH, activeBoxRect, capturedLayout, capturedOrder, capturedRects, configureLayout, fanDirection, floorLayout, flowChips, handLayout, miniStep, oppHandLayout, rotatedBounds, scoreBadgeRect, skillBarLayout, speechZone, tableInner, COUNT_ICON, FOCUS_BAR, MISSION_PANEL, SKILL_BAR, TABLE_H_NOMINAL, TABLE_MESSAGE, TEXT_MIN, bagPopupLayout, fitChipsOneRow, focusBarRect, suspicionBarRect, TABLE_MIN_H, skillRowsFor } from './layout.ts';
 import { CARDS } from '../cards.ts';
 
 // 다른 테스트는 모두 1280 기준 배치를 본다
@@ -18,7 +18,7 @@ test('영역은 위에서 아래로 겹치지 않고 1280 안에 들어가며, �
   assert.ok(REGIONS.hand.y + REGIONS.hand.h <= DESIGN.height, '손패 영역이 화면 안');
   assert.ok(!('skill' in REGIONS), '상시 안내 줄 없음');
   assert.ok(HAND_TOP_PAD >= HAND_ARROW.h + HAND_ARROW.bob, '윗줄 위 여백에 화살표(높이 + 왕복)가 들어간다');
-  assert.ok(REGIONS.table.h >= 460, '화투판 높이 460 이상(글자 키우기로 내 정보·기술 줄이 24 늘어 464)');
+  assert.ok(REGIONS.table.h >= 460, '화투판 높이 460 이상(2:3 카드로 손패가 낮아져 1280 기준 488)');
   assert.equal(REGIONS.oppCaptured.h, 84); assert.equal(REGIONS.myCaptured.h, 84);
   assert.ok(CARD.hand.w > CARD.floor.w && CARD.hand.h > CARD.floor.h, '손패는 바닥패보다 크다');
   assert.ok(CARD.floor.w > CARD.mini.w, '바닥패는 획득 패보다 크다');
@@ -238,14 +238,14 @@ test('긴 화면: configureLayout이 높이·안전 여백에 따라 영역을 �
     // 1280: 기존 값 그대로
     configureLayout(1280);
     assert.equal(JSON.stringify(REGIONS), snapshot);
-    assert.equal(DESIGN.height, 1280); assert.equal(REGIONS.table.h, TABLE_H_NOMINAL - 24); assert.equal(REGIONS.hand.y, 884); assert.equal(LAYOUT.handTopPad, HAND_TOP_PAD);
-    // 1600: 겹치지 않고 1600 안. 늘어난 320의 70%(224)를 화투판에, 30%(96)는 손패 위 여백에 주되 그중 24는 1280에서 줄어든 화투판에 먼저 돌려준다
+    assert.equal(DESIGN.height, 1280); assert.equal(REGIONS.table.h, TABLE_H_NOMINAL); assert.equal(REGIONS.hand.y, 908); assert.equal(LAYOUT.handTopPad, HAND_TOP_PAD + 4);
+    // 1600: 겹치지 않고 1600 안. 늘어난 320의 70%(224)를 화투판에, 30%(96)는 손패 위 여백에. 화투판 기준(488) 초과분 4도 여백으로
     configureLayout(1600);
     assert.equal(DESIGN.height, 1600);
     const o = regionsInOrder();
     for (let i = 1; i < o.length; i++) assert.ok(o[i].y >= o[i - 1].y + o[i - 1].h, `1600: 영역 ${i} 겹침`);
     assert.equal(REGIONS.hand.y + REGIONS.hand.h, 1600);
-    assert.equal(REGIONS.table.h, TABLE_H_NOMINAL + 224); assert.equal(LAYOUT.handTopPad, HAND_TOP_PAD + 96 - 24);
+    assert.equal(REGIONS.table.h, TABLE_H_NOMINAL + 224); assert.equal(LAYOUT.handTopPad, HAND_TOP_PAD + 96 + 4);
     assert.deepEqual(panelSizes(), base, '패널·카드 크기는 높이와 무관');
     for (const r of handLayout(12)) assert.ok(inside(r, REGIONS.hand));
     // 1600에서도 바닥 12자리(3장 묶음 포함)가 영역 안에서 겹치지 않고 카드 크기는 1280과 같다(세로 간격만 넓어짐)
@@ -260,8 +260,8 @@ test('긴 화면: configureLayout이 높이·안전 여백에 따라 영역을 �
     });
     configureLayout(1280);
     const flat = floorLayout(full);
-    // 1280은 화투판이 24 낮아져 바닥 카드가 높이에 묶인다(74×120). 긴 화면은 폭에 묶인 75×122. 차이는 2px 이내
-    assert.ok(tall.cards[0].w >= flat.cards[0].w && tall.cards[0].h - flat.cards[0].h <= 2 && flat.cards[0].h >= 118, '카드 크기 차이 2px 이내');
+    // 2:3 카드는 1280(판 488)·1600 모두 폭에 묶여 75×113으로 같다. 차이는 2px 이내
+    assert.ok(tall.cards[0].w >= flat.cards[0].w && tall.cards[0].h - flat.cards[0].h <= 2 && flat.cards[0].h >= 110, '카드 크기 차이 2px 이내');
     assert.ok(Math.abs(tall.cards[2].y - tall.cards[0].y) > Math.abs(flat.cards[2].y - flat.cards[0].y), '세로 간격이 넓어짐');
     // 1560 + 안전 여백(위 40, 아래 30): 상단 띠는 40 아래부터, 손패 아래 여백 ≥ 50
     configureLayout(1560, { top: 40, bottom: 30 });
@@ -273,9 +273,9 @@ test('긴 화면: configureLayout이 높이·안전 여백에 따라 영역을 �
     assert.deepEqual(panelSizes(), base);
     const o2 = regionsInOrder();
     for (let i = 1; i < o2.length; i++) assert.ok(o2[i].y >= o2[i - 1].y + o2[i - 1].h, `1560: 영역 ${i} 겹침`);
-    // 1440: 배분 공식(160의 70% → 화투판 112, 30% 48 중 24는 화투판에 돌려줌 → 여백 24)
+    // 1440: 배분 공식(160의 70% → 화투판 112, 30% 48 + 기준 초과분 4 → 여백 52)
     configureLayout(1440);
-    assert.equal(REGIONS.table.h, 600); assert.equal(LAYOUT.handTopPad, 48); assert.equal(REGIONS.hand.y, 1440 - (48 + CARD.hand.h * 2 + 10 + BOTTOM_SAFE));
+    assert.equal(REGIONS.table.h, 600); assert.equal(LAYOUT.handTopPad, 76); assert.equal(REGIONS.hand.y, 1440 - (76 + CARD.hand.h * 2 + 10 + BOTTOM_SAFE));
   } finally {
     configureLayout(1280);
   }
@@ -290,6 +290,39 @@ test('상태 칩 흐름 배치: 왼쪽부터 놓고 최대 x를 넘으면 다음
   assert.equal(rects[2].x, 100);
   assert.equal(flowChips([30, 40], 150, 0, 300, 100)[1].x, 150 + 44 + 6);
   assert.deepEqual(flowChips([], 0, 0, 100), []);
+});
+
+test('요청 12-5: 칩 6개(고·흔·폭 아이콘 + 뒤집기·국진·뻑 칩) 상태에서 칩은 내 정보 패널 안 한 줄에만 놓여 기술 줄과 겹치지 않는다', () => {
+  // 고·흔·폭은 아이콘(패널 안 고정 자리), 나머지가 칩으로 아이콘 아랫줄에 온다(panels.drawPlayerInfo와 같은 자리 계산)
+  const my = REGIONS.myInfo, act = activeBoxRect(my, false);
+  const x0 = COUNT_ICON.myX, y0 = my.y + 4 + COUNT_ICON.d + 3, maxX = act.x - 6;
+  const chips = [
+    { text: '뒤집기 2', short: '뒤집기2' },
+    { text: '국진→쌍피', short: '국→쌍' },
+    { text: '뻑 2', short: '뻑2' },
+  ];
+  for (const perChar of [4, 7, 10, 18, 30]) { // 글자 폭이 어떻든 한 줄·패널 안은 지켜진다
+    const fit = fitChipsOneRow(chips, t => t.length * perChar, x0, y0, maxX);
+    assert.ok(fit.rects.length >= 1);
+    assert.equal(new Set(fit.rects.map(r => r.y)).size, 1, '한 줄');
+    for (const r of fit.rects) {
+      assert.ok(r.y >= my.y && r.y + r.h <= my.y + my.h, '내 정보 패널 안');
+      assert.ok(r.y + r.h <= REGIONS.skillBar.y, '기술 줄과 겹치지 않음');
+      assert.ok(r.x + r.w <= maxX, '차례 상자 앞에서 끝남');
+    }
+  }
+  // 다 들어가면 원래 글자 그대로
+  const slim = fitChipsOneRow(chips, t => t.length * 4, x0, y0, maxX);
+  assert.deepEqual(slim.texts, chips.map(c => c.text)); assert.equal(slim.kept, 3);
+  // 원래 글자가 넘치면 전부 줄임말로
+  const mid = fitChipsOneRow(chips, t => t.length * 7, x0, y0, maxX);
+  assert.deepEqual(mid.texts, chips.map(c => c.short)); assert.equal(mid.kept, 3);
+  // 줄임말도 넘치면 뒤 칩을 "+N" 하나로 묶는다
+  const squeezed = fitChipsOneRow(chips, t => t.length * 18, x0, y0, maxX);
+  assert.ok(squeezed.kept < 3);
+  assert.ok(squeezed.texts[squeezed.texts.length - 1] === `+${3 - squeezed.kept}`, '마지막 칩은 +N');
+  assert.deepEqual(squeezed.texts.slice(0, -1), chips.slice(0, squeezed.kept).map(c => c.short));
+  assert.deepEqual(fitChipsOneRow([], t => t.length, x0, y0, maxX).rects, []);
 });
 
 test('기술 8개 + 가방: 두 줄(윗줄 4 · 아랫줄 4 + 가방)이 모두 화면 안, 서로 겹치지 않음. 1280 화투판 ≥ 440, 획득 패는 패널 안', () => {

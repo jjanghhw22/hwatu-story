@@ -47,7 +47,7 @@ export function epilogueScenes(route: SerinRoute, affinity: number, taeohAccepte
 export const CREDITS_SCENES: Scene[] = [
   cut('마지막 패\n— 왕이 없는 밤 —'),
   cut('기획·이야기·제작: jjanghhw22'),
-  cut('화투 도안: Marcus Richert (based on artwork by Louie Mantia, Jr.)\nWikimedia Commons, CC BY-SA 4.0'),
+  cut('화투 그림: 골목간판풍 (소유자 제작)'),
   cut('글꼴: 나눔고딕·나눔붓 (NHN Corporation, SIL OFL 1.1)\n엔진: Phaser 3 (MIT)'),
   cut('플레이해 주셔서 고맙습니다.'),
 ];
