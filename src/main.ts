@@ -9,7 +9,7 @@ import {type DialogEvent,DialogPolicy,EVENT_MOOD} from './dialog';
 import {CHARACTERS,type Character,MOODS,type Mood,PLAYER} from './character';
 import {type Chapter,ch8Choice,chapterById,chapterLabel,chapterWinVariant} from './story/chapters';
 import {OPPONENTS,type OpponentProfile,resolveOpponent} from './story/opponents';
-import {SKILLS,type SkillId} from './story/skills';
+import {SKILLS,SKILL_IDS,type SkillId} from './story/skills';
 import {type Progress,type WristState,addMoney,banPlace,bump,winsKey,canSpendFocus,formatWon,formatWonDelta,loadProgress,saveProgress,setFlag,settleStakeStaked,TAEOH_STAKED_FLAG,skillCostWithBoost,spendFocus,takeFromBag,withFocus} from './story/progress';
 import {FLAGS,itemById} from './story/items';
 import {provokedPolicy} from './story/policies';
@@ -137,6 +137,8 @@ class TableScene extends Phaser.Scene {
   blocksLeft=0; hasCharm=false; charmUsed=false;
   /** 손목 상태(요청 16, progress.wristState에서 읽음): braced면 손(속임수) 기술 금지, limited면 판당 1회. 개발 단축키 1~4로 전환. */
   wrist:WristState='normal';
+  /** 개발 단축키 0: 모든 기술 임시 보유 토글(저장 안 함). 켜기 전 원래 보유 목록을 담아 두었다가 끄면 되돌린다. */
+  devAllSkills=false; devSkillsBackup?:{id:SkillId;uses:number}[];
   /** 바꿔치기에서 고른 손패 id(적발 위험 게이지의 '실행' 대상). 취소·실행하면 비운다. */
   swapPick?:number;
   /** 접기(기권) 확인 모달이 떠 있는지. */
@@ -215,6 +217,7 @@ class TableScene extends Phaser.Scene {
     this.blocksLeft=this.profile.blocks??0;this.hasCharm=this.gear.includes('serinCharm');this.charmUsed=false;
     this.kingStage=this.launch.kingFinal?4:1;this.kingTop=topSkills(this.progress);this.betAccepted=false;this.betMult=1;this.betResolve=undefined;
     this.wrist=this.launch.scenario?'normal':this.progress.wristState;this.swapPick=undefined;this.foldAsk=false;
+    this.devAllSkills=false;this.devSkillsBackup=undefined;
     // 기술은 우측 세로 패널(요청 16)로 옮겨 아래 기술 줄은 항상 한 줄(태오·가방·공개 패)
     configureLayout(DESIGN.height,LAYOUT.insets,1);
     this.nearMissShown=this.progress.flags[NEAR_MISS_FLAG]===true;
@@ -246,7 +249,16 @@ class TableScene extends Phaser.Scene {
     // 첫 사용자 입력 뒤 소리 활성화(브라우저 정책)
     this.input.on('pointerdown',()=>this.sfx.unlock());
     // 개발 단축키(요청 16): 1~4로 손목 상태 전환(normal/braced/limited/healed) → 기술 패널 상태 확인. 진행 저장에도 반영(시나리오 모드 제외)
+    // 0: 모든 기술 임시 보유 토글(저장 안 함) — 어느 장에서든 기술 패널·게이지·보호대 오버레이를 눈으로 확인하는 용도
     this.input.keyboard?.on('keydown',(e:KeyboardEvent)=>{
+      if(e.key==='0'){
+        this.devAllSkills=!this.devAllSkills;
+        if(this.devAllSkills){
+          this.devSkillsBackup=this.skills;
+          this.skills=SKILL_IDS.map(id=>this.devSkillsBackup!.find(x=>x.id===id)??{id,uses:SKILLS[id].usesPerMatch});
+        }else{this.skills=this.devSkillsBackup??this.skills;this.devSkillsBackup=undefined;}
+        this.message=`개발: 전체 기술 ${this.devAllSkills?'켬':'끔'}(저장 안 함)`;this.draw();return;
+      }
       const map:Record<string,WristState>={'1':'normal','2':'braced','3':'limited','4':'healed'};
       const w=map[e.key];if(!w||this.wrist===w)return;
       this.wrist=w;if(!this.launch.scenario)saveProgress({...loadProgress(),wristState:w});
@@ -690,7 +702,7 @@ class TableScene extends Phaser.Scene {
       drawModal(ui,{title:'개발 정보',alpha:.92,lines:[
         {text:`빌드 ${BUILD_TAG}  ·  상대 ${this.profile.id}(${this.opponent.key})  ·  이번 판 상대 행동 ${this.aiActions}회  ·  ${this.launch.practice?'연습':this.chapter?this.chapter.id:'자유'}  ·  집중력 ${this.focus}/${this.focusMax}`,size:14,color:COLORS.text},
         {text:`미구현: ${NOT_IMPLEMENTED}. 표정 그림·음성 파일 없음(자리 표시·연결 지점만). AI 판단 이유는 콘솔 debug 로그.`,size:13},
-        {text:`의심도 ${this.suspicion}(배율 ${this.profile.sharpness}, 게이지 ${this.suspicionShown?'표시':'숨김'})  ·  미션 ${this.mission?`${this.mission.def.name} ×${this.mission.def.multiplier} [${this.mission.cardIds.join(',')}]`:'없음'}  ·  장비 ${this.gear.join(',')||'없음'}  ·  판돈 ${formatWon(this.stake)}  ·  손목 ${this.wrist}(1~4 전환)`,size:12},
+        {text:`의심도 ${this.suspicion}(배율 ${this.profile.sharpness}, 게이지 ${this.suspicionShown?'표시':'숨김'})  ·  미션 ${this.mission?`${this.mission.def.name} ×${this.mission.def.multiplier} [${this.mission.cardIds.join(',')}]`:'없음'}  ·  장비 ${this.gear.join(',')||'없음'}  ·  판돈 ${formatWon(this.stake)}  ·  손목 ${this.wrist}(1~4 전환)  ·  전체 기술 ${this.devAllSkills?'켬':'끔'}(0 토글, 저장 안 함)`,size:12},
         {text:'연출 줄이기는 화면 흔들림·충격 고리·섬광·궤적을 끄고 이동 시간을 절반으로 줄인다. 규칙 처리 순서와 결과는 같다.',size:13},
       ],buttons:[
         {text:'카드 목록',onTap:()=>this.switchModal('devinfo','gallery')},
