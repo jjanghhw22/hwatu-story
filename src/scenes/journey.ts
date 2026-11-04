@@ -68,6 +68,23 @@ export class JourneyScene extends Phaser.Scene {
     this.fx = new CardFx(this, this.add.container(), this.fxSettings);
     this.input.on('pointerdown', () => this.sfx.unlock());
     this.events.once('shutdown', () => this.fx.clear());
+    // 개발 진단: 9를 누르면 활성 씬 전체의 텍스트·그림 객체(내용, 월드 좌표, depth)를 콘솔 표로 남긴다.
+    // 화면에 설명되지 않는 글자가 보일 때 그 순간 눌러서 어느 씬·어느 객체인지 특정하는 용도(렌더링에는 영향 없음).
+    this.input.keyboard?.on('keydown', (e: KeyboardEvent) => {
+      if (e.key !== '9') return;
+      const rows: { scene: string; kind: string; text: string; x: number; y: number; depth: number; alpha: number }[] = [];
+      for (const sc of this.game.scene.getScenes(true)) {
+        const walk = (objs: Phaser.GameObjects.GameObject[]) => {
+          for (const o of objs) {
+            if (o instanceof Phaser.GameObjects.Text) { const m = o.getWorldTransformMatrix(); rows.push({ scene: sc.scene.key, kind: 'text', text: o.text, x: Math.round(m.tx), y: Math.round(m.ty), depth: o.depth, alpha: o.alpha }); }
+            else if (o instanceof Phaser.GameObjects.Image) { const m = o.getWorldTransformMatrix(); rows.push({ scene: sc.scene.key, kind: 'image', text: o.texture.key, x: Math.round(m.tx), y: Math.round(m.ty), depth: o.depth, alpha: o.alpha }); }
+            if (o instanceof Phaser.GameObjects.Container) walk(o.list);
+          }
+        };
+        walk(sc.children.list as Phaser.GameObjects.GameObject[]);
+      }
+      console.table(rows);
+    });
     this.draw();
     if (this.launch.moneyDelta) this.pulseMoney(this.launch.moneyDelta);
     // 첫 방문 장면(편의점 2장·5장 컵라면, 항구 5장)을 먼저 재생한 뒤 돌아와 행동 메뉴를 연다
