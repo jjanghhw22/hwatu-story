@@ -25,7 +25,13 @@ export type Progress = {
   counters: Record<string, number>;
   /** 장착한 장비(최대 GEAR_SLOTS=2). 장착한 것은 가방에서 빠진다. */
   gear: ItemId[];
+  /** 손목 상태(요청 16, 표시·제한용 — 규칙 계산에는 쓰지 않는다): braced면 손(속임수) 기술 금지, limited면 판당 1회. 예전 저장에 없으면 'normal'. */
+  wristState: WristState;
 };
+
+export type WristState = 'normal' | 'braced' | 'limited' | 'healed';
+export const WRIST_STATES: readonly WristState[] = ['normal', 'braced', 'limited', 'healed'];
+export const isWristState = (v: unknown): v is WristState => typeof v === 'string' && (WRIST_STATES as readonly string[]).includes(v);
 
 export const STORAGE_KEY = 'hwatu.progress.v1';
 /** 시작 소지금 12만 원, 압류 예고 3,200만 원(초반의 가짜 목표), 집중력 기본 100(바이블 3절). */
@@ -51,7 +57,7 @@ export function canTaeohStake(p: Progress, place: PlaceId): boolean { return pla
 
 export const initialSerin = (): SerinState => ({ affinity: 0, visits: 0, lastEventDay: 0, lastVisitDay: 0, pity: 0, seen: [] });
 export function initialProgress(): Progress {
-  return { day: 1, money: START_MONEY, chapterId: 'prologue', unlockedPlaces: ['barber'], skills: [], focusMax: FOCUS_BASE, focus: FOCUS_BASE, flags: {}, bag: {}, serin: initialSerin(), counters: {}, gear: [] };
+  return { day: 1, money: START_MONEY, chapterId: 'prologue', unlockedPlaces: ['barber'], skills: [], focusMax: FOCUS_BASE, focus: FOCUS_BASE, flags: {}, bag: {}, serin: initialSerin(), counters: {}, gear: [], wristState: 'normal' };
 }
 
 /** 저장소 추상화(테스트에서는 메모리 객체). */
@@ -91,6 +97,7 @@ export function deserialize(text: string): Progress | null {
       focus: Math.min(focusMax, Math.max(0, Math.round(num(o.focus, focusMax)))),
       flags, bag, serin, counters,
       gear: Array.isArray(o.gear) ? Array.from(new Set(o.gear.filter(isItemId))).slice(0, GEAR_SLOTS) : [],
+      wristState: isWristState(o.wristState) ? o.wristState : 'normal',
     };
   } catch { return null; }
 }

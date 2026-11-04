@@ -18,3 +18,17 @@
 | `public/assets/story/prologue-3.png` | 720×480 | 아니오 | 프롤로그 3컷 — 쌓인 독촉장과 멈춘 재봉틀 |
 | `public/assets/story/prologue-4.png` | 720×480 | 아니오 | 프롤로그 4컷 — 가방을 메고 고향 거리로 들어서는 도윤 뒷모습 |
 | `public/assets/story/cover-ch1.png` | 720×240 | 아니오 | 1장 커버 — 대성이발관 외관, 비 갠 오후, 간판과 회전등 |
+
+## 3단계 — 대국 화면 HUD (요청 16)
+
+그림이 생길 때까지 전부 theme 색 사각형·원 플레이스홀더로 그린다(지금 코드가 그 상태).
+
+| 파일 | 크기(px) | 투명배경 | 내용 |
+| --- | --- | --- | --- |
+| `public/assets/ui/portrait_opp_{상대id}.png` | 128×128 | 예 | 대국 화면 상대 초상(원형 마스크로 잘림, 얼굴 중심 정사각) — 상대별 1장: barber·bamcha·ma·bokhee·bonggu·highroller·sangcheol·taeoh·father·jeongho·mujin·stranger·merchant·courier |
+| `public/assets/ui/icon_skill_eye.png` | 64×64 | 예 | 기술 아이콘 — 눈썰미(치켜뜬 눈) |
+| `public/assets/ui/icon_skill_calmface.png` | 64×64 | 예 | 기술 아이콘 — 태연한 얼굴(무표정 가면) |
+| `public/assets/ui/icon_skill_lookaway.png` | 64×64 | 예 | 기술 아이콘 — 시선 돌리기(곁눈질 화살표) |
+| `public/assets/ui/icon_skill_swap.png` | 64×64 | 예 | 기술 아이콘 — 바꿔치기(소매 속 카드) |
+| `public/assets/ui/icon_brace.png` | 64×64 | 예 | 손목 보호대 오버레이 — 손 기술 제한 구간에 기술 아이콘 위를 덮는 붕대 감은 손목 |
+| `public/assets/ui/icon_fold.png` | 48×48 | 예 | 접기(기권) 버튼 아이콘 — 엎어 놓은 패 |

@@ -82,7 +82,7 @@ test('바닥패 12자리: 같은 월은 겹친 묶음, 다른 월·더미와는 
   }
   // 크기는 장수와 무관하게 일정(자리는 3장 묶음까지 미리 확보)
   assert.equal(floorLayout([1, 2, 3, 4, 5, 6, 7, 8]).scale, floorLayout(Array.from({ length: 36 }, (_, i) => (i % 12) + 1)).scale);
-  assert.ok(floorLayout([1]).cards[0].h >= 100, '바닥 카드가 지나치게 작아지지 않음');
+  assert.ok(floorLayout([1]).cards[0].h >= 90, '바닥 카드가 지나치게 작아지지 않음(우측 기술 패널로 판이 좁아져 63×95)');
   // 같은 월 묶음은 장마다 +3°
   const st = floorLayout([1, 1, 1]);
   assert.equal((st.cards[1].angle ?? 0) - (st.cards[0].angle ?? 0), 3);
@@ -144,7 +144,7 @@ test('바닥패 자리는 안쪽 고리부터 채우고, 턴이 지나도 기존
 test('획득 패: 한 줄 4묶음이 패널 안에 있고, 최대 장수(광 5·열끗 9·띠 10·피 24)까지 겹쳐도 묶음 밖으로 넘치지 않으며 크기는 줄이지 않는다', () => {
   const reg = REGIONS.myCaptured;
   const cells = capturedLayout(reg);
-  assert.deepEqual(cells.map(c => c.kind), ['광', '열끗', '띠', '피']);
+  assert.deepEqual(cells.map(c => c.kind), ['광', '띠', '열끗', '피']); // 요청 16 HUD 순서
   assert.equal(new Set(cells.map(c => c.y)).size, 1, '한 줄');
   for (let i = 1; i < cells.length; i++) assert.ok(cells[i].x >= cells[i - 1].x + cells[i - 1].w + 12, '묶음 사이 간격 12');
   for (const c of cells) { assert.ok(inside(c, { x: 0, y: reg.y, w: DESIGN.width, h: reg.h })); assert.ok(c.h >= CAPTURED_TAG_H + CARD.mini.h, '글자 줄과 카드 더미가 들어감'); }
@@ -260,8 +260,8 @@ test('긴 화면: configureLayout이 높이·안전 여백에 따라 영역을 �
     });
     configureLayout(1280);
     const flat = floorLayout(full);
-    // 2:3 카드는 1280(판 488)·1600 모두 폭에 묶여 75×113으로 같다. 차이는 2px 이내
-    assert.ok(tall.cards[0].w >= flat.cards[0].w && tall.cards[0].h - flat.cards[0].h <= 2 && flat.cards[0].h >= 110, '카드 크기 차이 2px 이내');
+    // 2:3 카드는 1280(판 488)·1600 모두 폭에 묶여 63×95로 같다(우측 기술 패널 96 + 틈 8만큼 판이 좁다). 차이는 2px 이내
+    assert.ok(tall.cards[0].w >= flat.cards[0].w && tall.cards[0].h - flat.cards[0].h <= 2 && flat.cards[0].h >= 90, '카드 크기 차이 2px 이내');
     assert.ok(Math.abs(tall.cards[2].y - tall.cards[0].y) > Math.abs(flat.cards[2].y - flat.cards[0].y), '세로 간격이 넓어짐');
     // 1560 + 안전 여백(위 40, 아래 30): 상단 띠는 40 아래부터, 손패 아래 여백 ≥ 50
     configureLayout(1560, { top: 40, bottom: 30 });

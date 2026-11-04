@@ -57,6 +57,9 @@ export const TABLE_MIN_H = 440;
 /** 한 줄에 둘 수 있는 기술 버튼 수(이보다 많으면 두 줄). */
 export const SKILL_ONE_ROW_MAX = 5;
 
+/** 우측 세로 기술 패널(요청 16): 화투판 오른쪽 폭 96 고정 띠. 화투판은 그만큼 좁아진다(바닥패도 비율대로 줄어든다). */
+export const SKILL_PANEL = { w: 96, gap: 8, pad: 8, icon: 64, iconMin: 44, iconGap: 8, foldH: 48, counterSize: 14 } as const;
+
 /**
  * 위에서 아래 순서의 영역. 손패(위 여백 + 두 줄 + 안전 여백)·정보·획득 패널 크기는 높이와 무관하게 같고, 남은 높이는 화투판과 손패 위 여백이 나눠 갖는다.
  * export 이름과 필드명은 고정이며 configureLayout()이 값만 갱신한다. 상시 안내 줄은 없다(메뉴 > 규칙 안내).
@@ -66,7 +69,8 @@ export const REGIONS: { topBar: Rect; oppInfo: Rect; oppCaptured: Rect; table: R
   /** 상대 초상화(반지름 36)·이름·칩·점수 배지·말풍선 자리·손패 뒷면. 화면 높이의 15% 이내. */
   oppInfo: { x: 0, y: 0, w: 720, h: OPP_INFO_H },
   oppCaptured: { x: 0, y: 0, w: 720, h: CAPTURED_H },
-  table: { x: MARGIN, y: 0, w: 720 - MARGIN * 2, h: TABLE_H_BASE },
+  /** 화투판: 오른쪽에 세로 기술 패널(96 + 틈 8)을 두어 폭이 그만큼 좁다(요청 16). */
+  table: { x: MARGIN, y: 0, w: 720 - MARGIN * 2 - SKILL_PANEL.w - SKILL_PANEL.gap, h: TABLE_H_BASE },
   myInfo: { x: 0, y: 0, w: 720, h: MY_INFO_H },
   /** 기술 버튼 줄(눈썰미·태연한 얼굴…) + 가방 버튼. */
   skillBar: { x: 0, y: 0, w: 720, h: SKILL_BAR_H },
@@ -182,6 +186,23 @@ export function skillBarLayout(reg: Rect, nButtons: number): SkillBarLayout {
 }
 /** 이번 판 기술 버튼 수로 줄 수를 정한다(5개 초과면 두 줄). */
 export function skillRowsFor(nButtons: number): 1 | 2 { return nButtons > SKILL_ONE_ROW_MAX ? 2 : 1; }
+
+// ---- 우측 세로 기술 패널(요청 16) ----
+export type SkillPanelLayout = { panel: Rect; icons: Rect[]; fold: Rect };
+/**
+ * 세로 기술 패널: 화투판 오른쪽 띠(폭 96, 화투판과 같은 세로 구간). 보유 기술 아이콘 버튼을 위에서부터 쌓고,
+ * 접기 버튼은 패널 맨 아래 상시 자리. 아이콘은 기본 64, 기술이 많아 넘치면 44까지 줄인다. 순수 함수.
+ */
+export function skillPanelLayout(nIcons: number): SkillPanelLayout {
+  const t = REGIONS.table, P = SKILL_PANEL;
+  const x = t.x + t.w + P.gap, w = P.w;
+  const panel: Rect = { x, y: t.y, w, h: t.h };
+  const fold: Rect = { x: x + P.pad, y: t.y + t.h - P.pad - P.foldH, w: w - P.pad * 2, h: P.foldH };
+  const availH = fold.y - P.iconGap - (t.y + P.pad);
+  const iconH = nIcons > 0 ? Math.max(P.iconMin, Math.min(P.icon, Math.floor((availH - (nIcons - 1) * P.iconGap) / nIcons))) : P.icon;
+  const icons = Array.from({ length: nIcons }, (_, i) => ({ x: x + P.pad, y: t.y + P.pad + i * (iconH + P.iconGap), w: w - P.pad * 2, h: iconH }));
+  return { panel, icons, fold };
+}
 /** 가방 팝업: 기술 줄 바로 위, 오른쪽 맞춤. 항목 n개(최소 1칸: "비었음")를 가로로. */
 export function bagPopupLayout(reg: Rect, nItems: number): { panel: Rect; items: Rect[] } {
   const { popupItemW: iw, popupH: h, gap } = SKILL_BAR;
@@ -416,19 +437,19 @@ export function floorLayout(months: readonly number[], fanMonth?: number, prevSl
 function overlapsRect(a: Rect, b: Rect) { return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h; }
 
 // ---- 획득 패 ----
-/** 한 줄 4묶음(광·열끗·띠·피) 폭 비율과 묶음 사이 간격. */
+/** 한 줄 4묶음(광·띠·열끗·피, 요청 16 HUD 순서) 폭 비율과 묶음 사이 간격. */
 export const CAPTURED_WIDTHS = [0.18, 0.26, 0.26, 0.30] as const;
 export const CAPTURED_GROUP_GAP = 12;
 /** 묶음 위의 작은 글자 줄(완성 족보·힌트) 높이. 그 아래에 카드 더미가 온다. */
 export const CAPTURED_TAG_H = 12;
 export type CapturedCell = Rect & { kind: '광' | '열끗' | '띠' | '피' };
-/** 획득 패 패널 묶음 칸: 왼쪽부터 광·열끗·띠·피 한 줄. 양쪽 패널이 같은 기준을 쓴다. */
+/** 획득 패 패널 묶음 칸: 왼쪽부터 광·띠·열끗·피 한 줄(요청 16). 양쪽 패널이 같은 기준을 쓴다. */
 export function capturedLayout(reg: Rect): CapturedCell[] {
   const inner = { x: MARGIN + 8, y: reg.y + 4, w: reg.w - MARGIN * 2 - 16, h: reg.h - 8 };
   const avail = inner.w - CAPTURED_GROUP_GAP * (CAPTURED_WIDTHS.length - 1);
   const cells: CapturedCell[] = [];
   let x = inner.x;
-  (['광', '열끗', '띠', '피'] as const).forEach((kind, i) => { const w = Math.floor(avail * CAPTURED_WIDTHS[i]); cells.push({ kind, x, y: inner.y, w, h: inner.h }); x += w + CAPTURED_GROUP_GAP; });
+  (['광', '띠', '열끗', '피'] as const).forEach((kind, i) => { const w = Math.floor(avail * CAPTURED_WIDTHS[i]); cells.push({ kind, x, y: inner.y, w, h: inner.h }); x += w + CAPTURED_GROUP_GAP; });
   return cells;
 }
 

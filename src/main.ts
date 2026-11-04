@@ -10,7 +10,7 @@ import {CHARACTERS,type Character,MOODS,type Mood,PLAYER} from './character';
 import {type Chapter,ch8Choice,chapterById,chapterLabel,chapterWinVariant} from './story/chapters';
 import {OPPONENTS,type OpponentProfile,resolveOpponent} from './story/opponents';
 import {SKILLS,type SkillId} from './story/skills';
-import {type Progress,addMoney,banPlace,bump,winsKey,canSpendFocus,formatWon,formatWonDelta,loadProgress,saveProgress,setFlag,settleStakeStaked,TAEOH_STAKED_FLAG,skillCostWithBoost,spendFocus,takeFromBag,withFocus} from './story/progress';
+import {type Progress,type WristState,addMoney,banPlace,bump,winsKey,canSpendFocus,formatWon,formatWonDelta,loadProgress,saveProgress,setFlag,settleStakeStaked,TAEOH_STAKED_FLAG,skillCostWithBoost,spendFocus,takeFromBag,withFocus} from './story/progress';
 import {FLAGS,itemById} from './story/items';
 import {provokedPolicy} from './story/policies';
 import {type TauntState,afterGoStop,calm,markShown,newTauntState,pickTaunt,shouldTaunt} from './story/taunt';
@@ -37,8 +37,10 @@ import {BootScene} from './scenes/boot';
 import {JourneyScene} from './scenes/journey';
 import {StoryScene} from './scenes/story';
 import {BUILD_TAG,CREDITS,NOT_IMPLEMENTED,RULES} from './ui/infoTexts';
-import {BASE_HEIGHT,CARD,type CapturedRects,DESIGN,FLOOR_STACK_TILT,HAND_ARROW,HOLD_LIFT,MARGIN,MAX_HEIGHT,REGIONS,type Rect,type FloorLayout,type SafeInsets,LAYOUT,SKILL_BAR,TEXT_MIN,bagPopupLayout,skillRowsFor,capturedRects,configureLayout,floorLayout,handLayout,oppHandLayout,scoreBadgeRect,skillBarLayout,speechZone} from './ui/layout';
+import {BASE_HEIGHT,CARD,type CapturedRects,DESIGN,FLOOR_STACK_TILT,HAND_ARROW,HOLD_LIFT,MARGIN,MAX_HEIGHT,REGIONS,type Rect,type FloorLayout,type SafeInsets,LAYOUT,SKILL_BAR,SKILL_PANEL,SUSPICION_BAR,TEXT_MIN,bagPopupLayout,capturedRects,configureLayout,floorLayout,handLayout,oppHandLayout,scoreBadgeRect,skillBarLayout,skillPanelLayout,speechZone} from './ui/layout';
 import {COLORS,type UI,box,button,label} from './ui/widgets';
+import {makeButton,makeModal,makePanel} from './ui/components';
+import {COLORS as TOKENS,FONTS,colorNum} from './ui/theme';
 import {drawCardFace,drawChanceCard} from './ui/cardView';
 import {type PlayerInfoView,drawCaptured,drawPlayerInfo} from './ui/panels';
 import {type PortraitView,portraitReact,preloadPortraits} from './ui/portrait';
@@ -133,6 +135,12 @@ class TableScene extends Phaser.Scene {
   fatherHold=0;
   /** 10장 구상만: 남은 봉쇄. 서린의 부적: 장착·사용 여부. */
   blocksLeft=0; hasCharm=false; charmUsed=false;
+  /** 손목 상태(요청 16, progress.wristState에서 읽음): braced면 손(속임수) 기술 금지, limited면 판당 1회. 개발 단축키 1~4로 전환. */
+  wrist:WristState='normal';
+  /** 바꿔치기에서 고른 손패 id(적발 위험 게이지의 '실행' 대상). 취소·실행하면 비운다. */
+  swapPick?:number;
+  /** 접기(기권) 확인 모달이 떠 있는지. */
+  foldAsk=false;
   /** 11장 백무진: 현재 단계, 1단계 봉쇄 대상(여정에서 많이 쓴 2개), 판돈 ×2 수락, 판돈 배수, 제안 대기. */
   kingStage:KingStage=1; kingTop:SkillId[]=[]; betAccepted=false; betMult=1; betResolve?:(d:boolean)=>void;
   get names(){return [PLAYER.name,this.oppChar.name];}
@@ -206,9 +214,9 @@ class TableScene extends Phaser.Scene {
     this.oppTurns=0;this.tempFold=false;this.foldTaught=false;this.watchUsed=false;this.timerSec=undefined;this.fatherHold=0;
     this.blocksLeft=this.profile.blocks??0;this.hasCharm=this.gear.includes('serinCharm');this.charmUsed=false;
     this.kingStage=this.launch.kingFinal?4:1;this.kingTop=topSkills(this.progress);this.betAccepted=false;this.betMult=1;this.betResolve=undefined;
-    // 기술 버튼이 5개(가방 제외)를 넘으면 기술 줄 두 줄: 배운 기술 + 태오 + (아버지 판에서 아직 접기를 안 배웠으면) 임시 접기. 판 시작 전에 한 번 정한다
-    const nBtns=this.skills.length+(this.taeohAvail?1:0)+(this.profile.teachesFold&&!this.skills.some(x=>x.id==='fold')?1:0);
-    configureLayout(DESIGN.height,LAYOUT.insets,skillRowsFor(nBtns));
+    this.wrist=this.launch.scenario?'normal':this.progress.wristState;this.swapPick=undefined;this.foldAsk=false;
+    // 기술은 우측 세로 패널(요청 16)로 옮겨 아래 기술 줄은 항상 한 줄(태오·가방·공개 패)
+    configureLayout(DESIGN.height,LAYOUT.insets,1);
     this.nearMissShown=this.progress.flags[NEAR_MISS_FLAG]===true;
     this.timerDeadline=0;this.timerKind=undefined;this.timerEvent=undefined;this.timerTick=-1;
     // 도발형 상대는 고/스톱 정책을 래퍼로 감싼다(도발에 응하면 공격적). 규칙 함수(canDecide/canGo)는 그대로.
@@ -237,6 +245,13 @@ class TableScene extends Phaser.Scene {
     this.missingTextures=missingCardTextures(this.textures);if(this.missingTextures.length)console.warn('카드 그림 누락 id:',this.missingTextures);
     // 첫 사용자 입력 뒤 소리 활성화(브라우저 정책)
     this.input.on('pointerdown',()=>this.sfx.unlock());
+    // 개발 단축키(요청 16): 1~4로 손목 상태 전환(normal/braced/limited/healed) → 기술 패널 상태 확인. 진행 저장에도 반영(시나리오 모드 제외)
+    this.input.keyboard?.on('keydown',(e:KeyboardEvent)=>{
+      const map:Record<string,WristState>={'1':'normal','2':'braced','3':'limited','4':'healed'};
+      const w=map[e.key];if(!w||this.wrist===w)return;
+      this.wrist=w;if(!this.launch.scenario)saveProgress({...loadProgress(),wristState:w});
+      this.message=`개발: 손목 상태 ${w}`;this.draw();
+    });
     // 새 판(restart)·씬 종료 시 진행 중인 연출과 예약 작업 정리
     this.events.once('shutdown',()=>this.teardown());this.events.once('destroy',()=>this.teardown());
     this.draw();
@@ -318,6 +333,11 @@ class TableScene extends Phaser.Scene {
   get cheatSpec():CheatSpec|undefined{return this.profile.king?stageCheat(this.kingStage):this.profile.cheat;}
   canUseSkill(sk:{id:SkillId;uses:number}){
     if(this.phase!=='hand'||sk.uses<=0||!canSpendFocus(this.focus,this.skillCost(sk.id))||this.isRead(sk.id))return false;
+    // 손목 상태(요청 16): 보호대 구간엔 손(속임수) 기술 금지, 제한 구간엔 손 기술 판당 1회
+    if(SKILLS[sk.id].kind==='cheat'){
+      if(this.wrist==='braced')return false;
+      if(this.wrist==='limited'&&(this.skillUses[sk.id]??0)>=1)return false;
+    }
     if(sk.id==='readThrough')return !this.watching;
     if(sk.id==='fold')return canFold(this.state);
     if(sk.id==='eye')return this.state.deck.length>0;
@@ -330,8 +350,8 @@ class TableScene extends Phaser.Scene {
   useSkill(id:SkillId){
     const sk=this.skills.find(x=>x.id===id), s=this.state;
     if(!sk||!this.canUseSkill(sk))return;
-    // 바꿔치기는 패를 고른 뒤(doSwap) 비용을 치른다(취소하면 무료)
-    if(id==='swap'){this.phase='swap';this.message='바꿀 패를 고르세요 (취소: 바꿔치기 버튼)';this.draw();return;}
+    // 바꿔치기는 패를 고르고 '실행'을 누른 뒤(doSwap) 비용을 치른다(취소하면 무료). 판 위에 적발 위험 게이지가 뜬다(요청 16)
+    if(id==='swap'){this.phase='swap';this.swapPick=undefined;this.message='';this.draw();return;}
     this.focus=spendFocus(this.focus,this.skillCost(id));sk.uses-=1;this.consumeCoffee();this.noteSkillUse(id);
     if(this.blockSkill(id))return;
     if(id==='fold'){this.stopTurnTimer();this.state.forfeit(0,{kind:'fold'});this.showResult('불리한 판을 접었습니다.');return;}
@@ -367,18 +387,13 @@ class TableScene extends Phaser.Scene {
     if(!this.launch.scenario){const q=loadProgress();saveProgress({...q,counters:{...q.counters,[skillCounterKey(id)]:(q.counters[skillCounterKey(id)]??0)+1}});}
     if(this.profile.learner&&justRead(this.skillUses,id)){this.setMood('happy');this.fx.speech(TAEOH_READ,speechZone());}
   }
-  /** 기술 줄 버튼 순서(그리기와 같다): 임시 접기 → 태오 → 배운 순서. */
-  buttonKeys():string[]{
-    const keys:string[]=this.skills.map(x=>x.id);
-    if(this.taeohAvail)keys.unshift('taeoh');
-    const fi=keys.indexOf('fold');if(this.tempFold&&fi>0)keys.unshift(...keys.splice(fi,1));
-    return keys;
-  }
+  /** 우측 기술 패널 아이콘 순서(그리기와 같다): 배운 순서. 접기는 패널 아래 전용 버튼이라 뺀다. 미보유 기술은 아예 없다(실루엣·자물쇠 예고 금지, 요청 16). */
+  panelKeys():SkillId[]{return this.skills.map(x=>x.id).filter(id=>id!=='fold');}
   /** 구상만 봉쇄: 남은 봉쇄가 있으면 이번 기술은 무효(집중력은 이미 소모). 막힌 기술 버튼에 X 300ms. */
   blockSkill(id:SkillId):boolean{
     const b=consumeBlock(this.blocksLeft);if(!b.blocked)return false;
     this.blocksLeft=b.left;this.message=`${this.names[1]}이 막았다 (남은 봉쇄 ${this.blocksLeft})`;this.setMood('happy');this.draw();
-    const keys=this.buttonKeys(), r=skillBarLayout(REGIONS.skillBar,keys.length).buttons[keys.indexOf(id)];
+    const keys=this.panelKeys(), lay=skillPanelLayout(keys.length), r=id==='fold'?lay.fold:lay.icons[keys.indexOf(id)];
     if(r){const x=this.add.text(r.x+r.w/2,r.y+r.h/2,'✕',{fontFamily:'sans-serif',fontSize:40,color:'#e03a3a',fontStyle:'bold',stroke:'#000000',strokeThickness:4}).setOrigin(0.5).setDepth(60);this.time.delayedCall(300,()=>x.destroy());}
     return true;
   }
@@ -456,24 +471,13 @@ class TableScene extends Phaser.Scene {
     const my=REGIONS.myInfo;
     this.myPanel=drawPlayerInfo(ui,my,{character:PLAYER,mood:'normal',score:mine,goCount:s.goCount[0],gukjin:s.gukjinUse(0),flipChances:s.flipChances[0],active:this.myTurn,activeText:this.phase==='choice'?'바닥패 선택':this.phase==='swap'?'바꿀 패 선택':'내 차례',ppeokCount:this.ppeokCount(0),declared:s.declaredMonths(0),big:false,first:true,focus:{cur:this.focus,max:this.focusMax},suspicion:this.suspicionShown?this.suspicion:undefined});
     this.scoreTexts[0]=this.myPanel.scoreText;
-    // 기술 줄(내 정보 아래): 배운 기술마다 버튼(비용·남은 횟수. 집중력·횟수가 모자라면 비활성), 공개한 더미 패는 그 오른쪽에 내 차례 동안, 가방(사탕) 버튼은 오른쪽 끝.
-    // 기술 줄(높이 52): 배운 기술(+ 5장 태오) 버튼 최대 5개, 이름 18, 오른쪽 위 작은 배지에 비용·남은 횟수(14). 맨 오른쪽 가방 버튼 → 팝업(사탕·마스크·투시경)
-    type Btn={key:string;name:string;badge:string;on:boolean;onTap:()=>void;fill?:number};
-    const btns:Btn[]=this.skills.map(sk=>{
-      const def=SKILLS[sk.id], cost=this.skillCost(sk.id);
-      if(sk.id==='swap'&&this.phase==='swap')return {key:sk.id,name:'취소',badge:'',on:true,onTap:()=>this.cancelSwap(),fill:0xe0875a};
-      if(this.isRead(sk.id))return {key:sk.id,name:def.short,badge:this.kingLocked(sk.id)?'왕이 봤다':'읽혔다',on:false,onTap:()=>undefined};
-      return {key:sk.id,name:def.short,badge:sk.uses>0?`${cost}${this.coffeeBoost?'*':''}·${sk.uses}`:'다 씀',on:this.canUseSkill(sk),onTap:()=>this.useSkill(sk.id),fill:sk.id==='fold'&&this.tempFold?0xffe08a:undefined};
-    });
-    if(this.taeohAvail)btns.unshift({key:'taeoh',name:'태오',badge:this.taeohUses>0?'0·1':'다 씀',on:this.phase==='hand'&&this.taeohUses>0,onTap:()=>{void this.useTaeoh();},fill:0x8eb4e3});
-    // 임시 접기는 윗줄 맨 앞(눈에 띄게)
-    const fi=btns.findIndex(b=>b.key==='fold');if(this.tempFold&&fi>0)btns.unshift(...btns.splice(fi,1));
-    const sbL=skillBarLayout(REGIONS.skillBar,btns.length);
-    btns.slice(0,sbL.buttons.length).forEach((b,i)=>{
-      const r=sbL.buttons[i];
-      button(ui,r.x,r.y,r.w,b.name,b.onTap,b.on,r.h,SKILL_BAR.textSize,b.fill);
-      if(b.badge){const bw=Math.max(30,b.badge.length*9+10);box(ui,r.x+r.w-bw-2,r.y-6,bw,18,0x111111,0.92,COLORS.brassDim);label(ui,r.x+r.w-bw/2-2,r.y+3,b.badge,SKILL_BAR.badgeSize,b.on?COLORS.gold:'#8d8577',bw,[0.5,0.5],true);}
-    });
+    // 기술은 우측 세로 패널(요청 16). 아래 기술 줄에는 태오 도움 버튼·가방(팝업)·눈썰미 공개 패만 남는다.
+    this.drawSkillPanel(ui);
+    const sbL=skillBarLayout(REGIONS.skillBar,this.taeohAvail?1:0);
+    if(this.taeohAvail){
+      const r=sbL.buttons[0];
+      button(ui,r.x,r.y,r.w,this.taeohUses>0?'태오':'태오 · 씀',()=>{void this.useTaeoh();},this.phase==='hand'&&this.taeohUses>0,r.h,SKILL_BAR.textSize,0x8eb4e3);
+    }
     const next=s.deck[0];
     if(this.peek&&next){drawCardFace(ui,sbL.preview,next);if(this.peekCount>=2&&s.deck[1])drawCardFace(ui,sbL.preview2,s.deck[1]);}
     const bagItems=this.bagItems();
@@ -498,10 +502,12 @@ class TableScene extends Phaser.Scene {
         const card=slot.card, r=lay[i], canTake=inHand&&s.matches(card).length>0;
         // 폭탄 가능: 주황 배지. 흔들기 가능: 금색 테두리 + 오른쪽 위 종 모양(누르면 흔들림 + 종소리 뒤 세 장 공개)
         const mark=bombMonths.includes(mo)?{badge:'폭탄',badgeColor:0xf0923a}:shakeMonths.includes(mo)?{bell:(parts:Phaser.GameObjects.GameObject[])=>this.bells.set(card.id,parts)}:{};
-        const onTap=inHand?()=>this.play(slot.index):this.phase==='swap'?()=>{void this.doSwap(card.id);}:undefined;
+        const onTap=inHand?()=>this.play(slot.index):this.phase==='swap'?()=>{this.swapPick=card.id;this.draw();}:undefined;
         this.slides.place(ui,`hand:${card.id}`,r,u=>{
           box(u,r.x+3,r.y+4,r.w,r.h,0x000000,0.3);
           drawCardFace(u,r,card,{dim:dim&&this.phase!=='swap',...mark,onTap});
+          // 바꿔치기에서 고른 패: 금색 테두리(실행은 판 위 게이지 창에서)
+          if(this.phase==='swap'&&this.swapPick===card.id)box(u,r.x-3,r.y-3,r.w+6,r.h+6,0x000000,0,colorNum(TOKENS.gold),3);
         });
         if(canTake)arrows.push({cx:r.x+r.w/2,tipY:r.y-HAND_ARROW.above});
       }
@@ -515,7 +521,102 @@ class TableScene extends Phaser.Scene {
       if(!items.length)label(ui,pop.panel.x+pop.panel.w/2,pop.panel.y+pop.panel.h/2,'비었음',TEXT_MIN,COLORS.muted,pop.panel.w,[0.5,0.5]);
       items.forEach((it,i)=>{const r=pop.items[i];button(ui,r.x,r.y,r.w,it.name,it.onTap,it.on,r.h,TEXT_MIN);});
     }
+    if(this.phase==='swap')this.drawSwapGauge(ui);
+    if(this.foldAsk&&this.phase==='hand')this.drawFoldAsk(ui);
     this.drawModals(mine.total,theirs.total);
+  }
+  /**
+   * 우측 세로 기술 패널(요청 16, theme 토큰만 사용): 보유 기술만 아이콘 버튼으로(미보유 슬롯은 표시하지 않음 — 후반 기술은 존재를 숨긴다).
+   * 상태: 사용 가능 = 금색 테두리 / 보호대 구간 = 손(속임수) 기술 위 보호대 오버레이(icon_brace.png 자리, 지금은 theme 사각형) + 비활성 /
+   * 횟수 제한 = 아이콘 우하단 "남은/한도" 카운터(limited 구간의 손 기술은 한도 1). 읽힌 기술은 아래에 붉은 글씨.
+   * 패널 맨 아래 '접기' 버튼은 상시 노출: 누르면 기권 비용 확인 모달(makeModal).
+   */
+  drawSkillPanel(ui:UI){
+    const keys=this.panelKeys(), lay=skillPanelLayout(keys.length);
+    ui.layer.add(makePanel(this,lay.panel.x,lay.panel.y,lay.panel.w,lay.panel.h));
+    keys.forEach((id,i)=>{
+      const sk=this.skills.find(x=>x.id===id)!, def=SKILLS[id], r=lay.icons[i];
+      const usable=this.canUseSkill(sk), braced=this.wrist==='braced'&&def.kind==='cheat', read=this.isRead(id);
+      const limit=this.wrist==='limited'&&def.kind==='cheat'?Math.min(1,def.usesPerMatch):def.usesPerMatch;
+      const remaining=Math.max(0,Math.min(sk.uses,limit-(this.skillUses[id]??0)));
+      const g=this.add.graphics();ui.layer.add(g);
+      g.fillStyle(colorNum(TOKENS.panel),1).fillRoundedRect(r.x,r.y,r.w,r.h,8);
+      g.lineStyle(usable?2:1,colorNum(usable?TOKENS.gold:TOKENS.panelBorder),1).strokeRoundedRect(r.x,r.y,r.w,r.h,8);
+      // 아이콘 자리 표시(그림이 생기면 icon_skill_*.png로 교체)
+      g.fillStyle(colorNum(TOKENS.goldDim),usable?0.28:0.12).fillRoundedRect(r.x+6,r.y+4,r.w-12,r.h-24,6);
+      const nameT=this.add.text(r.x+r.w/2,r.y+(r.h-24)/2+4,def.short,{fontFamily:FONTS.body,fontSize:16,fontStyle:'bold',color:usable?TOKENS.text:TOKENS.textDim}).setOrigin(0.5);
+      ui.layer.add(nameT);
+      // 비용(왼쪽 아래)·남은/한도 카운터(오른쪽 아래)
+      ui.layer.add(this.add.text(r.x+6,r.y+r.h-4,`${this.skillCost(id)}${this.coffeeBoost?'*':''}`,{fontFamily:FONTS.body,fontSize:SKILL_PANEL.counterSize,color:TOKENS.goldDim}).setOrigin(0,1));
+      ui.layer.add(this.add.text(r.x+r.w-6,r.y+r.h-4,`${remaining}/${limit}`,{fontFamily:FONTS.body,fontSize:SKILL_PANEL.counterSize,fontStyle:'bold',color:remaining>0?TOKENS.gold:TOKENS.textDim}).setOrigin(1,1));
+      if(read)ui.layer.add(this.add.text(r.x+r.w/2,r.y+r.h-4,this.kingLocked(id)?'왕이 봤다':'읽혔다',{fontFamily:FONTS.body,fontSize:SKILL_PANEL.counterSize,color:TOKENS.red}).setOrigin(0.5,1));
+      if(braced){
+        // 보호대 오버레이(icon_brace.png 64×64 자리): 어두운 덮개 + 띠 두 줄 + '보호대'
+        const o=this.add.graphics();ui.layer.add(o);
+        o.fillStyle(colorNum(TOKENS.shadow),0.55).fillRoundedRect(r.x,r.y,r.w,r.h,8);
+        o.fillStyle(colorNum(TOKENS.textDim),0.8).fillRect(r.x+8,r.y+Math.round(r.h*0.3),r.w-16,6).fillRect(r.x+8,r.y+Math.round(r.h*0.55),r.w-16,6);
+        ui.layer.add(this.add.text(r.x+r.w/2,r.y+r.h/2,'보호대',{fontFamily:FONTS.body,fontSize:14,fontStyle:'bold',color:TOKENS.red,stroke:'#000000',strokeThickness:3}).setOrigin(0.5));
+      }
+      if(usable){
+        const hit=this.add.rectangle(r.x,r.y,r.w,r.h,0x000000,0.001).setOrigin(0).setInteractive({useHandCursor:true});
+        hit.on('pointerdown',()=>this.useSkill(id));ui.layer.add(hit);
+      }
+    });
+    const foldSk=this.skills.find(x=>x.id==='fold');
+    const fold=makeButton(this,lay.fold.x,lay.fold.y,lay.fold.w,lay.fold.h,'접기',()=>{if(this.foldAsk)return;this.foldAsk=true;this.draw();});
+    fold.setEnabled(!!foldSk&&this.canUseSkill(foldSk));
+    ui.layer.add(fold.container);
+  }
+  /** 바꿔치기 실패를 가정한 적발 위험 단계(기존 의심도 체계에서 읽음): 예상 의심도 70 이상 높음, 50 이상 중간, 그 아래 낮음. */
+  swapRisk():{level:1|2|3;name:string}{
+    const proj=raiseSuspicion(this.suspicion,SUSPICION.swapFail,this.profile.sharpness);
+    const level:1|2|3=proj>=SUSPICION_BAR.dangerAt?3:proj>=SUSPICION_BAR.warnAt?2:1;
+    return {level,name:level===3?'높음':level===2?'중간':'낮음'};
+  }
+  /** 바꿔치기 단계: 판 위 '적발 위험' 게이지(낮음/중간/높음, red 토큰) + 실행/취소(요청 16). 실행은 손패를 고른 뒤에만 켜진다. */
+  drawSwapGauge(ui:UI){
+    const t=REGIONS.table, w=340, h=150, x=t.x+Math.round((t.w-w)/2), y=t.y+16;
+    ui.layer.add(makePanel(this,x,y,w,h));
+    const risk=this.swapRisk();
+    ui.layer.add(this.add.text(x+w/2,y+20,'적발 위험',{fontFamily:FONTS.body,fontSize:18,fontStyle:'bold',color:TOKENS.red}).setOrigin(0.5));
+    const segW=72,segH=14,segGap=6,gx=x+Math.round((w-(segW*3+segGap*2+64))/2),gy=y+38;
+    const g=this.add.graphics();ui.layer.add(g);
+    for(let i=0;i<3;i++){
+      const sx=gx+i*(segW+segGap);
+      g.fillStyle(colorNum(TOKENS.red),i<risk.level?(0.45+0.25*i):0.1).fillRoundedRect(sx,gy,segW,segH,4);
+      g.lineStyle(1,colorNum(TOKENS.panelBorder),1).strokeRoundedRect(sx,gy,segW,segH,4);
+    }
+    ui.layer.add(this.add.text(gx+segW*3+segGap*2+10,gy+segH/2,risk.name,{fontFamily:FONTS.body,fontSize:16,fontStyle:'bold',color:risk.level===3?TOKENS.red:TOKENS.text}).setOrigin(0,0.5));
+    const picked=this.swapPick!==undefined?this.state.hands[0].find(c=>c.id===this.swapPick):undefined;
+    ui.layer.add(this.add.text(x+w/2,y+72,picked?`바꿀 패: ${picked.month}월 ${picked.name}`:'바꿀 손패를 고르세요',{fontFamily:FONTS.body,fontSize:16,color:picked?TOKENS.text:TOKENS.textDim}).setOrigin(0.5));
+    const bw=130,bh=40,by=y+h-bh-12;
+    const run=makeButton(this,x+w/2-bw-8,by,bw,bh,'실행',()=>{const id=this.swapPick;if(id!==undefined)void this.doSwap(id);});
+    run.setEnabled(this.swapPick!==undefined);
+    const cancel=makeButton(this,x+w/2+8,by,bw,bh,'취소',()=>this.cancelSwap());
+    ui.layer.add(run.container);ui.layer.add(cancel.container);
+  }
+  /** 접기(기권) 비용 확인 모달(makeModal, 요청 16): "이 판을 접습니다. 비용 N" + 확인/취소. */
+  drawFoldAsk(ui:UI){
+    const close=()=>{this.foldAsk=false;this.draw();};
+    const m=makeModal(this,460,250,close);
+    ui.layer.add(m.container);
+    const p=m.panel;
+    ui.layer.add(this.add.text(p.x+p.w/2,p.y+36,'이 판을 접습니다',{fontFamily:FONTS.title,fontSize:26,color:TOKENS.text}).setOrigin(0.5));
+    ui.layer.add(this.add.text(p.x+p.w/2,p.y+84,`비용: 집중력 ${this.skillCost('fold')}`,{fontFamily:FONTS.body,fontSize:20,color:TOKENS.gold}).setOrigin(0.5));
+    ui.layer.add(this.add.text(p.x+p.w/2,p.y+118,'상대 승리 · 상대 기본 점수 그대로(고·박·배수 없음)',{fontFamily:FONTS.body,fontSize:16,color:TOKENS.textDim}).setOrigin(0.5));
+    const bw=150,bh=44,by=p.y+p.h-bh-20;
+    const ok=makeButton(this,p.x+p.w/2-bw-10,by,bw,bh,'확인',()=>{this.foldAsk=false;this.useSkill('fold');});
+    const no=makeButton(this,p.x+p.w/2+10,by,bw,bh,'취소',close);
+    ui.layer.add(ok.container);ui.layer.add(no.container);
+  }
+  /** 고/스톱 요약 슬롯을 보여줄 수 있는가: 셈하기·위험 계산에 해당하는 기술(눈썰미·기억력) 보유 시에만(요청 16). */
+  hasInsight(){return this.skills.some(x=>x.id==='eye'||x.id==='memory');}
+  /** 고/스톱 창 한 줄 요약: 상대 박 위험(기존 bakWarnings 사용) 또는 상대 기본 점수. */
+  goStopSummary():string{
+    const warns=bakWarnings(this.state,1), sc=this.state.score(1);
+    if(warns.includes('피박'))return `상대 피 ${sc.피.cards.length}장 — 피박 위험`;
+    if(warns.includes('광박'))return `상대 광 ${sc.광.cards.length}장 — 광박 위험`;
+    return `상대 기본 ${this.state.baseScore(1)}점 — 박 위험 없음`;
   }
   drawModals(myBase:number,theirBase:number){
     const ui=this.ui, s=this.state;
@@ -542,9 +643,13 @@ class TableScene extends Phaser.Scene {
       const base=s.baseScore(0), n=s.goCount[0], pv=s.previewSettlement(0);
       const mult=[...(pv.baks.length?[`${pv.baks.join('·')} ${pv.multiplier}배`]:[]),...(pv.declared.length?[`선언(${declText(pv.declared)}) ${pv.declMultiplier}배`]:[])];
       const bak=mult.length?`  ×  ${mult.join(' × ')}  =  ${pv.final}점`:'';
-      drawModal(ui,{title:'고 또는 스톱?',titleRight:this.timerKind==='gostop'&&this.timerSec!==undefined?{text:`${this.timerSec}초`,color:this.timerSec<=3?'#e03a3a':COLORS.text,size:24}:undefined,lines:[
+      drawModal(ui,{title:'고 하시겠습니까?',titleRight:this.timerKind==='gostop'&&this.timerSec!==undefined?{text:`${this.timerSec}초`,color:this.timerSec<=3?'#e03a3a':COLORS.text,size:24}:undefined,lines:[
         ...(this.tauntNow&&!this.taunt.calmed?[{text:'(도발)',size:13,color:COLORS.orange,bold:true}]:[]),
         {text:`기본 점수 ${base}점  ·  현재 ${n}고  ·  지금 스톱하면 ${pv.goPoints}점${bak}`,color:COLORS.text},
+        // 스톱 시 받을 금액(판돈 × 최종 점수 × 배수). 판돈 없는 판(연습·이야기)은 점수로
+        {text:`스톱 시 ${this.stake>0?formatWonDelta(pv.final*this.stake*this.betMult):`+${pv.final}점`}`,size:18,color:COLORS.gold,bold:true},
+        // 한 줄 요약(요청 16): 셈하기·위험 계산에 해당하는 기술(눈썰미·기억력)이 있을 때만
+        ...(this.hasInsight()?[{text:this.goStopSummary(),size:15,color:COLORS.muted}]:[]),
         {text:'고를 외치면 기본 점수가 지금보다 올라야 다시 선택할 수 있습니다.',size:15},
       ],buttons:[
         {text:`고  ·  ${n+1}고로 계속`,onTap:()=>this.decideGoStop('go'),fill:0xe0875a},
@@ -585,7 +690,7 @@ class TableScene extends Phaser.Scene {
       drawModal(ui,{title:'개발 정보',alpha:.92,lines:[
         {text:`빌드 ${BUILD_TAG}  ·  상대 ${this.profile.id}(${this.opponent.key})  ·  이번 판 상대 행동 ${this.aiActions}회  ·  ${this.launch.practice?'연습':this.chapter?this.chapter.id:'자유'}  ·  집중력 ${this.focus}/${this.focusMax}`,size:14,color:COLORS.text},
         {text:`미구현: ${NOT_IMPLEMENTED}. 표정 그림·음성 파일 없음(자리 표시·연결 지점만). AI 판단 이유는 콘솔 debug 로그.`,size:13},
-        {text:`의심도 ${this.suspicion}(배율 ${this.profile.sharpness}, 게이지 ${this.suspicionShown?'표시':'숨김'})  ·  미션 ${this.mission?`${this.mission.def.name} ×${this.mission.def.multiplier} [${this.mission.cardIds.join(',')}]`:'없음'}  ·  장비 ${this.gear.join(',')||'없음'}  ·  판돈 ${formatWon(this.stake)}`,size:12},
+        {text:`의심도 ${this.suspicion}(배율 ${this.profile.sharpness}, 게이지 ${this.suspicionShown?'표시':'숨김'})  ·  미션 ${this.mission?`${this.mission.def.name} ×${this.mission.def.multiplier} [${this.mission.cardIds.join(',')}]`:'없음'}  ·  장비 ${this.gear.join(',')||'없음'}  ·  판돈 ${formatWon(this.stake)}  ·  손목 ${this.wrist}(1~4 전환)`,size:12},
         {text:'연출 줄이기는 화면 흔들림·충격 고리·섬광·궤적을 끄고 이동 시간을 절반으로 줄인다. 규칙 처리 순서와 결과는 같다.',size:13},
       ],buttons:[
         {text:'카드 목록',onTap:()=>this.switchModal('devinfo','gallery')},
@@ -772,7 +877,7 @@ class TableScene extends Phaser.Scene {
     void this.applySuspicion(SUSPICION.xray);
   }
   // ---- 바꿔치기 ----
-  cancelSwap(){if(this.phase!=='swap')return;this.phase='hand';this.message='';this.draw();}
+  cancelSwap(){if(this.phase!=='swap')return;this.phase='hand';this.swapPick=undefined;this.message='';this.draw();}
   /**
    * 바꿔치기: 고른 손패를 더미 윗장과 교환(GameState.swapHandWithDeck, 상태 동작). 성공률 70%(+동전 15%p, 최대 90%).
    * 성공: 손패가 더미로 가고 더미 윗장이 뒤집혀 손패로 들어오는 연출, 의심도 +25. 실패: 교환 없이 의심도 +40. 들통이면 판이 끝난다.
@@ -781,7 +886,7 @@ class TableScene extends Phaser.Scene {
     if(this.phase!=='swap')return;
     const gen=this.gen, s=this.state, sk=this.skills.find(x=>x.id==='swap');
     if(!sk||sk.uses<=0||!canSpendFocus(this.focus,this.skillCost('swap'))||s.deck.length===0){this.cancelSwap();return;}
-    this.phase='busy';
+    this.phase='busy';this.swapPick=undefined;
     this.focus=spendFocus(this.focus,this.skillCost('swap'));sk.uses-=1;this.consumeCoffee();this.noteSkillUse('swap');
     if(this.blockSkill('swap')){this.phase='hand';this.draw();return;}
     const coin=this.coinBoost;if(coin){this.coinBoost=false;if(!this.launch.scenario)saveProgress(setFlag(loadProgress(),FLAGS.coinBoost,false));}
@@ -927,8 +1032,8 @@ class TableScene extends Phaser.Scene {
     this.foldTaught=true;this.tempFold=true;this.fatherHold=TEACH_FOLD.holdTurns;this.skills.push({id:'fold',uses:1});
     this.fx.speech(FATHER_TEACH_FOLD,speechZone());
     this.draw();
-    const keys=this.buttonKeys(), idx=keys.indexOf('fold'), lay=skillBarLayout(REGIONS.skillBar,keys.length); // 임시 접기는 맨 앞
-    const rect=lay.buttons[idx];if(rect)void this.fx.highlight([rect],this.fxSettings.ms(600),0xffe08a);
+    const rect=skillPanelLayout(this.panelKeys().length).fold; // 접기는 패널 아래 전용 버튼
+    void this.fx.highlight([rect],this.fxSettings.ms(600),0xffe08a);
   }
   /** 내 차례에 먹은 분류 기록(학습형): 3턴 연속 같은 분류면 태오가 저지를 강화한다. */
   noteCaptures(plan:TurnPlan){
