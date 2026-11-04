@@ -23,6 +23,7 @@ import { missingAssets } from '../ui/missing';
 import { type ModalButton, type ModalLine, drawModal } from '../ui/modals';
 import { SoundFx } from '../ui/sound';
 import { COLORS, FONT, type UI, box, button, label, panel } from '../ui/widgets';
+import { makeButton } from '../ui/components';
 import { type JourneyLaunch, SCENE_KEYS, goJourney, playEnding, playStory, startChapterMatch, startErrandMatch, startLessonMatch, startNormalMatch, startPractice, startTable } from './flow';
 
 type Modal = 'kingChoice' | 'finalChoice' | 'routeChoice' | 'jump' | 'jumpConfirm' | 'none' | 'place' | 'menu' | 'rules' | 'credits' | 'devinfo' | 'scenarios' | 'reward' | 'box' | 'shop' | 'bag' | 'notice' | 'choice' | 'noMoney' | 'gear' | 'errands' | 'errandChoice';
@@ -131,9 +132,11 @@ export class JourneyScene extends Phaser.Scene {
       if (isNext && id === 'store' && ch10Pointer(p) === 'store') label(ui, x, y + r + JOURNEY.node.labelGap, '서린이 잠깐 들르래.', 12, COLORS.gold, 200, [0.5, 0]);
       circle.setInteractive({ useHandCursor: true }).on('pointerdown', () => this.openPlace(id));
     });
-    // 3. 아래 메뉴
+    // 3. 아래 메뉴 — 새 디자인 토큰 검증용으로 이 버튼만 components.makeButton(theme.ts)으로 그린다(요청 13)
     const B = JOURNEY.bottom;
-    button(ui, MARGIN, DESIGN.height - B.pad - B.h, DESIGN.width - MARGIN * 2, '메뉴', () => this.switchModal('none', 'menu'), this.modal === 'none' && !this.busy, B.h, 20);
+    const menu = makeButton(this, MARGIN, DESIGN.height - B.pad - B.h, DESIGN.width - MARGIN * 2, B.h, '메뉴', () => this.switchModal('none', 'menu'));
+    menu.setEnabled(this.modal === 'none' && !this.busy);
+    this.layer.add(menu.container);
     this.drawModals();
   }
   openPlace(id: PlaceId) {

@@ -1339,7 +1339,8 @@ function startGame(){
   // 첫 씬(boot)이 진행 상태를 읽어 프롤로그 또는 여정 지도로 보낸다. 대결(table)은 지도·이야기 씬이 시작 데이터와 함께 연다.
   new Phaser.Game({type:Phaser.AUTO,parent:'app',width:DESIGN.width,height:DESIGN.height,backgroundColor:'#141a14',scene:[BootScene,JourneyScene,StoryScene,TableScene],audio:{noAudio:true},scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH}});
 }
+// 로컬 나눔 폰트 + 디자인 토큰용 Noto(웹폰트, index.html에서 로드)를 모두 기다린다. 웹폰트가 느리거나 오프라인이면 3초 뒤 그냥 시작.
 const fontsReady=typeof document!=='undefined'&&'fonts' in document
-  ?Promise.all(['16px "NanumGothic"','bold 16px "NanumGothic"','16px "NanumBrushScript"'].map(f=>document.fonts.load(f).catch(()=>[]))).then(()=>undefined)
+  ?Promise.all(['16px "NanumGothic"','bold 16px "NanumGothic"','16px "NanumBrushScript"','16px "Noto Sans KR"','bold 16px "Noto Sans KR"','16px "Noto Serif KR"','bold 16px "Noto Serif KR"'].map(f=>document.fonts.load(f).catch(()=>[]))).then(()=>undefined)
   :Promise.resolve();
-void Promise.race([fontsReady,new Promise<void>(r=>setTimeout(r,1500))]).then(startGame);
+void Promise.race([fontsReady,new Promise<void>(r=>setTimeout(r,3000))]).then(startGame);
