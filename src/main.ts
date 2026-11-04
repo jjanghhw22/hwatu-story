@@ -1337,7 +1337,8 @@ function startGame(){
   const ratio0=window.innerWidth/Math.max(1,window.innerHeight);
   window.addEventListener('resize',()=>{const r=window.innerWidth/Math.max(1,window.innerHeight);if(Math.abs(r-ratio0)/ratio0>=0.1)console.debug('[layout] 화면 비율이 10% 이상 바뀌었습니다. 판 중간에는 배치를 바꾸지 않습니다(새로고침하면 새 비율로 시작).');});
   // 첫 씬(boot)이 진행 상태를 읽어 프롤로그 또는 여정 지도로 보낸다. 대결(table)은 지도·이야기 씬이 시작 데이터와 함께 연다.
-  new Phaser.Game({type:Phaser.AUTO,parent:'app',width:DESIGN.width,height:DESIGN.height,backgroundColor:'#141a14',scene:[BootScene,JourneyScene,StoryScene,TableScene],audio:{noAudio:true},scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH}});
+  // input.activePointers 3: 기본값 1이면 쥔 엄지 등 다른 손가락이 화면에 닿아 있는 동안 탭이 무시된다(터치 전용 기기).
+  new Phaser.Game({type:Phaser.AUTO,parent:'app',width:DESIGN.width,height:DESIGN.height,backgroundColor:'#141a14',input:{activePointers:3},scene:[BootScene,JourneyScene,StoryScene,TableScene],audio:{noAudio:true},scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH}});
 }
 // 로컬 나눔 폰트 + 디자인 토큰용 Noto(웹폰트, index.html에서 로드)를 모두 기다린다. 웹폰트가 느리거나 오프라인이면 3초 뒤 그냥 시작.
 const fontsReady=typeof document!=='undefined'&&'fonts' in document

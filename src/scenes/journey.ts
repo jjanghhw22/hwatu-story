@@ -13,7 +13,7 @@ import { CHARM_FLAG, GATES, type GateNo, type SerinRoute, canChallengeGate, ch10
 import { ENDING_TITLES, endingsSeen, progressAtChapter } from '../story/endings';
 import { OPPONENTS } from '../story/opponents';
 import { CHARACTERS } from '../character';
-import { noteMissing } from '../ui/missing';
+import { loadFailed, noteMissing } from '../ui/missing';
 import { type SerinEventId, applyEvent, serinEventById, tierName, visitSerin } from '../story/serin';
 import { SKILLS } from '../story/skills';
 import { CardFx, FxSettings } from '../ui/fx';
@@ -24,6 +24,7 @@ import { type ModalButton, type ModalLine, drawModal } from '../ui/modals';
 import { SoundFx } from '../ui/sound';
 import { COLORS, FONT, type UI, box, button, label, panel } from '../ui/widgets';
 import { makeButton } from '../ui/components';
+import { COLORS as TOKENS, colorNum } from '../ui/theme';
 import { type JourneyLaunch, SCENE_KEYS, goJourney, playEnding, playStory, startChapterMatch, startErrandMatch, startLessonMatch, startNormalMatch, startPractice, startTable } from './flow';
 
 type Modal = 'kingChoice' | 'finalChoice' | 'routeChoice' | 'jump' | 'jumpConfirm' | 'none' | 'place' | 'menu' | 'rules' | 'credits' | 'devinfo' | 'scenarios' | 'reward' | 'box' | 'shop' | 'bag' | 'notice' | 'choice' | 'noMoney' | 'gear' | 'errands' | 'errandChoice';
@@ -56,11 +57,11 @@ export class JourneyScene extends Phaser.Scene {
     this.modal = data.kingChoice ? 'kingChoice' : data.finalChoice ? 'finalChoice' : data.routeChoice ? 'routeChoice' : data.reward || data.chapterDone ? 'reward' : data.serinChoice ? 'choice' : data.errandChoice ? 'errandChoice' : data.notice ? 'notice' : data.openPlace ? 'place' : 'none';
     if (data.notice) this.notice = data.notice;
   }
-  /** 현재 장 대표 컷(없으면 어두운 패널). 읽기 실패는 조용히 기록. */
+  /** 현재 장 대표 컷(없으면 theme panel 색 폴백). 읽기 실패는 조용히 기록하고, 이미 실패한 키는 다시 요청하지 않는다(요청 15). */
   preload() {
     const c = currentChapter(loadProgress());
-    if (c.cover && !this.textures.exists(coverKey(c.cover))) this.load.image(coverKey(c.cover), c.cover);
-    this.load.on('loaderror', (file: { key: string; src: string }) => { if (file.key.startsWith('cover:')) noteMissing(file.src); });
+    if (c.cover) { const k = coverKey(c.cover); if (!this.textures.exists(k) && !loadFailed(k)) this.load.image(k, c.cover); }
+    this.load.on('loaderror', (file: { key: string; src: string }) => { if (file.key.startsWith('cover:')) noteMissing(file.src, file.key); });
   }
   create() {
     this.progress = loadProgress();
@@ -89,7 +90,7 @@ export class JourneyScene extends Phaser.Scene {
     this.children.bringToTop(this.fx.layer);
     const ui = this.ui, p = this.progress, ch = this.chapter;
     box(ui, 0, 0, DESIGN.width, DESIGN.height, COLORS.bg);
-    // 0. 맨 위 현재 장 대표 컷(640×240): 그림이 있으면 비율 유지로 맞추고, 없으면 어두운 패널에 장 제목만
+    // 0. 맨 위 현재 장 대표 컷(640×240): 그림이 있으면 비율 유지로 맞추고, 없으면 theme panel 색 바탕에 장 제목만(의도된 폴백, 요청 15)
     const C = JOURNEY.cover, cx0 = (DESIGN.width - C.w) / 2;
     panel(ui, cx0, C.y, C.w, C.h, 'wood');
     const ck = ch.cover ? coverKey(ch.cover) : undefined;
@@ -97,7 +98,7 @@ export class JourneyScene extends Phaser.Scene {
       const img = this.add.image(cx0 + C.w / 2, C.y + C.h / 2, ck);
       img.setScale(Math.min((C.w - 16) / img.width, (C.h - 16) / img.height)); this.layer.add(img);
     } else {
-      box(ui, cx0 + 8, C.y + 8, C.w - 16, C.h - 16, 0x0b0f0c);
+      box(ui, cx0 + 8, C.y + 8, C.w - 16, C.h - 16, colorNum(TOKENS.panel));
       label(ui, DESIGN.width / 2, C.y + C.h / 2, chapterLabel(ch), 22, COLORS.goldDim, C.w - 48, [0.5, 0.5], true);
     }
     // 1. 머리: day · 소지금 · 현재 장 · 압류 예고(작게, 붉은 글자) · 집중력·기술 · 가방 버튼

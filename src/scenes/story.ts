@@ -1,4 +1,4 @@
-// 이야기 씬: Scene[]을 순서대로 보여준다. cut은 큰 컷(그림이 있으면 그림, 없으면 상자 없이 가운데 큰 글자), line은 비주얼 노벨 배치:
+// 이야기 씬: Scene[]을 순서대로 보여준다. cut은 큰 컷(그림이 있으면 그림, 없으면 theme panel 색 패널 + 가운데 큰 글자), line은 비주얼 노벨 배치:
 // 화면 아래 대화창(폭 680, 높이 = 화면 × 0.28) + 그 바로 위에 말하는 인물의 상반신(character.ts bustFit, 높이 = 화면 × 0.55, 아래 끝을 대화창 위 끝에 맞춤).
 // 화자가 바뀌면 이전 상반신 120ms 페이드아웃, 새 상반신 160ms 페이드인 + 8px 올라옴. 플레이어(한도윤) 대사는 상반신 없이 대화창만(1인칭).
 // 그림 파일이 없는 인물은 상반신 대신 이름표 옆 작은 원형 이니셜. 터치/클릭으로 다음, 길게 누르면 빨리 넘김. 타자 효과 없음.
@@ -6,7 +6,8 @@ import Phaser from 'phaser';
 import { CHARACTERS, type CharacterId, PLAYER, cropSquare, portraitTextureKey } from '../character';
 import type { Scene } from '../story/chapters';
 import { DESIGN, MARGIN, STORY } from '../ui/layout';
-import { noteMissing } from '../ui/missing';
+import { makePanel } from '../ui/components';
+import { loadFailed, noteMissing } from '../ui/missing';
 import { drawPortrait, preloadPortraits } from '../ui/portrait';
 import { COLORS, FONT, type UI, box, label, panel } from '../ui/widgets';
 import { SCENE_KEYS, type StoryLaunch } from './flow';
@@ -39,11 +40,11 @@ export class StoryScene extends Phaser.Scene {
   init(data: StoryLaunch) { this.launch = data; this.index = 0; this.done = false; this.fast = false; this.bust = undefined; }
   preload() {
     const scenes = this.launch?.scenes ?? [];
-    // 컷 그림: 경로가 있고 아직 읽지 않았으면 읽는다. 파일이 없으면 읽기 실패 → 글자 컷(조용히 기록, 목록은 메뉴 > 개발 정보)
-    for (const s of scenes) if (s.kind === 'cut' && s.image && !this.textures.exists(cutKey(s.image))) this.load.image(cutKey(s.image), s.image);
+    // 컷 그림: 경로가 있고 아직 읽지 않았으면 읽는다. 파일이 없으면 읽기 실패 → 패널 폴백(조용히 기록, 목록은 메뉴 > 개발 정보). 이미 실패한 키는 다시 요청하지 않는다.
+    for (const s of scenes) if (s.kind === 'cut' && s.image) { const k = cutKey(s.image); if (!this.textures.exists(k) && !loadFailed(k)) this.load.image(k, s.image); }
     const speakers = Array.from(new Set(scenes.flatMap(s => (s.kind === 'line' ? [s.speaker] : [])))).map(id => CHARACTERS[id]);
     preloadPortraits(this.load, speakers.length ? speakers : [PLAYER]);
-    this.load.on('loaderror', (file: { key: string; src: string }) => { if (file.key.startsWith('cut:')) noteMissing(file.src); });
+    this.load.on('loaderror', (file: { key: string; src: string }) => { if (file.key.startsWith('cut:')) noteMissing(file.src, file.key); });
   }
   create() {
     const { scenes } = this.launch;
@@ -93,7 +94,7 @@ export class StoryScene extends Phaser.Scene {
     if (s.kind === 'cut') { this.setBust(undefined); this.drawCut(ui, s); } else this.drawLine(topUi, s);
     label(topUi, DESIGN.width / 2, DESIGN.height - STORY.hint.bottom + 12, this.index + 1 < n ? '누르면 다음 · 길게 누르면 빨리 넘김' : '누르면 계속', STORY.hint.size, COLORS.muted, 600, [0.5, 0.5]);
   }
-  /** 큰 컷: 그림이 있으면 나무 패널 안에 비율 유지로 맞추고 글자는 그 아래. 그림이 없으면 상자 없이 글자를 상자 자리 가운데에 크게(22px, 줄 간격 1.5, 아이보리). */
+  /** 큰 컷: 그림이 있으면 나무 패널 안에 비율 유지로 맞추고 글자는 그 아래. 그림이 없으면 theme panel 색 패널을 컷 자리에 깔고 글자를 가운데에 크게(의도된 폴백, 요청 15). */
   drawCut(ui: UI, s: Extract<Scene, { kind: 'cut' }>) {
     const { w, h, y } = STORY.cut, x = (DESIGN.width - w) / 2;
     const key = s.image ? cutKey(s.image) : undefined;
@@ -108,6 +109,7 @@ export class StoryScene extends Phaser.Scene {
       return;
     }
     const T = STORY.cutText;
+    this.layer.add(makePanel(this, x, y, w, h));
     const t = this.add.text(DESIGN.width / 2, y + h / 2, s.text, { fontFamily: FONT, fontSize: T.size, color: COLORS.text, align: 'center', lineSpacing: Math.round(T.size * (T.lineHeight - 1)), wordWrap: { width: w - T.pad * 2 } }).setOrigin(0.5, 0.5);
     this.layer.add(t);
   }
