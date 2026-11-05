@@ -3,7 +3,7 @@
 import Phaser from 'phaser';
 import { seededRng } from '../rng';
 import { SCENARIOS } from '../scenarios';
-import { CH5_RAMEN_SCENES, CH7_COURIER, CH7_VISITOR, CHAPTERS, type ChapterId, GIFT_SCENES, SERIN_LAST_ITEM, SERIN_ROUTE_ASK, SERIN_ROUTE_REPLY, TAEOH_STAKE_SCENES, type Chapter, NIGHT_CH6_SCENES, chapterById, chapterLabel, isChapterImplemented, placeOpensLabel } from '../story/chapters';
+import { CH5_RAMEN_SCENES, CH7_COURIER, CH7_VISITOR, CHAPTERS, type ChapterId, GIFT_SCENES, SERIN_LAST_ITEM, SERIN_ROUTE_ASK, SERIN_ROUTE_REPLY, TAEOH_STAKE_SCENES, type Chapter, NIGHT_CH6_SCENES, type Scene, chapterById, chapterLabel, isChapterImplemented, placeOpensLabel } from '../story/chapters';
 import { ERRANDS, type ErrandId, canChallengeBokhee, completeErrand, errandById, errandsDone, isErrandDone } from '../story/errands';
 import { FLAGS, type ItemId, itemById, shopItems } from '../story/items';
 import { MIN_STAKE_POINTS, PLACES, PLACE_IDS, type PlaceId, canSit, isPlaceReady } from '../story/places';
@@ -32,6 +32,13 @@ type Modal = 'kingChoice' | 'finalChoice' | 'routeChoice' | 'jump' | 'jumpConfir
 const NODE = { open: 0x15302a, openEdge: 0xb08d4a, locked: 0x1c1c1a, lockedEdge: 0x444039, lockedText: '#6f6a60', link: 0x7a6236, banned: 0xc0392b } as const;
 const coverKey = (path: string) => `cover:${path}`;
 const PREPARING = '다음 이야기는 아직 준비 중';
+/** 이야기 연출 데모(요청 17, 개발 정보에서만): 컷 폴백·지문·대사(초상 유/무)·선택지를 한 번에 확인한다. 장 데이터·분기는 건드리지 않는다. */
+const UI_DEMO_SCENES: Scene[] = [
+  { kind: 'cut', image: 'assets/story/ch1-barber.png', text: '컷 패널 데모 — 그림 파일이 생기면 웹툰 패널로, 없으면 이 패널 폴백으로 나온다.' },
+  { kind: 'cut', text: '지문 데모 — 행동 묘사는 초상 없이 화면 가운데에 흐린 기울임꼴로 나온다.' },
+  { kind: 'line', speaker: 'seorin', text: '대사 데모. 글이 타자기처럼 나오는 중에 탭하면 전부 표시되고, 한 번 더 탭하면 다음으로 넘어가.' },
+  { kind: 'line', speaker: 'courier', text: '초상 그림이 없는 화자는 이렇게 이름표만 나온다.' },
+];
 
 export class JourneyScene extends Phaser.Scene {
   progress!: Progress;
@@ -421,6 +428,14 @@ export class JourneyScene extends Phaser.Scene {
         { text: '진행 초기화', onTap: () => { if (this.modal !== 'devinfo') return; resetProgress(); this.scene.start(SCENE_KEYS.boot); } },
         { text: '장 바로가기', onTap: () => this.switchModal('devinfo', 'jump') },
         { text: '시나리오', onTap: () => this.switchModal('devinfo', 'scenarios') },
+        { text: '이야기 연출 데모', onTap: () => {
+          if (this.modal !== 'devinfo') return;
+          const back = (picked: string) => (s: Phaser.Scene) => goJourney(s, { notice: { title: '이야기 연출 데모', lines: [picked] } });
+          playStory(this, '연출 데모', UI_DEMO_SCENES, back('끝까지 봤다.'), { prompt: '선택지 데모 — 어느 쪽으로?', options: [
+            { text: '정면으로 간다', pick: back('‘정면으로 간다’를 골랐다.') },
+            { text: '돌아서 간다', pick: back('‘돌아서 간다’를 골랐다.') },
+          ] });
+        } },
         close('devinfo', 'menu'),
       ] });
     }

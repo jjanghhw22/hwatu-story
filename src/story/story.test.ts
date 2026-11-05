@@ -7,7 +7,7 @@ import { PLACES, PLACE_IDS } from './places.ts';
 import { OPPONENTS, OPPONENT_IDS, resolveOpponent } from './opponents.ts';
 import { SKILLS, SKILL_IDS } from './skills.ts';
 import { ITEMS, ITEM_IDS } from './items.ts';
-import { type KV, STORAGE_KEY, canSpendFocus, completeChapter, deserialize, formatManWon, formatWon, initialProgress, isChapterDone, loadProgress, resetProgress, rest, saveProgress, serialize, spendFocus, withFocus } from './progress.ts';
+import { type KV, STORAGE_KEY, canSpendFocus, completeChapter, deserialize, formatManWon, formatWon, hasSeenStory, initialProgress, isChapterDone, loadProgress, markStorySeen, resetProgress, rest, saveProgress, serialize, spendFocus, withFocus } from './progress.ts';
 
 const unique = (ids: readonly string[]) => assert.equal(new Set(ids).size, ids.length, `중복 id: ${ids.join(',')}`);
 
@@ -93,9 +93,21 @@ test('기술 8개·아이템 10개: id 유일, 수치는 바이블대로', () =>
 
 test('진행 상태: 시작값과 직렬화 왕복', () => {
   const p = initialProgress();
-  assert.deepEqual(p, { day: 1, money: 120000, chapterId: 'prologue', unlockedPlaces: ['barber'], skills: [], focusMax: 100, focus: 100, flags: {}, bag: {}, serin: { affinity: 0, visits: 0, lastEventDay: 0, lastVisitDay: 0, pity: 0, seen: [] }, counters: {}, gear: [], wristState: 'normal' });
+  assert.deepEqual(p, { day: 1, money: 120000, chapterId: 'prologue', unlockedPlaces: ['barber'], skills: [], focusMax: 100, focus: 100, flags: {}, bag: {}, serin: { affinity: 0, visits: 0, lastEventDay: 0, lastVisitDay: 0, pity: 0, seen: [] }, counters: {}, gear: [], wristState: 'normal', seenStories: [] });
   const back = deserialize(serialize({ ...p, skills: ['eye'], unlockedPlaces: ['barber', 'home', 'store'], chapterId: 'ch2', flags: { 'ch1.done': true }, focus: 60 }));
   assert.deepEqual(back, { ...p, skills: ['eye'], unlockedPlaces: ['barber', 'home', 'store'], chapterId: 'ch2', flags: { 'ch1.done': true }, focus: 60 });
+});
+
+test('이야기 열람 기록(요청 17): 추가는 한 번만, 조회는 라벨 그대로, 깨진 값은 문자열만 남긴다', () => {
+  const p = initialProgress();
+  assert.ok(!hasSeenStory(p, 'CHAPTER 01 · 머리부터 자르고 와라'));
+  const q = markStorySeen(p, 'CHAPTER 01 · 머리부터 자르고 와라');
+  assert.ok(hasSeenStory(q, 'CHAPTER 01 · 머리부터 자르고 와라'));
+  assert.equal(markStorySeen(q, 'CHAPTER 01 · 머리부터 자르고 와라'), q, '이미 있으면 같은 객체(저장 생략)');
+  assert.deepEqual(deserialize(serialize(q))?.seenStories, ['CHAPTER 01 · 머리부터 자르고 와라']);
+  const broken = deserialize('{"chapterId":"ch1","seenStories":["a",3,null,"b"]}')!;
+  assert.deepEqual(broken.seenStories, ['a', 'b']);
+  assert.deepEqual(deserialize('{"chapterId":"ch1"}')!.seenStories, [], '예전 저장 호환');
 });
 
 test('진행 상태: 깨진 저장은 초기값, 모르는 id는 걸러내고 범위를 맞춘다', () => {

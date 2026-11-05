@@ -27,6 +27,8 @@ export type Progress = {
   gear: ItemId[];
   /** 손목 상태(요청 16, 표시·제한용 — 규칙 계산에는 쓰지 않는다): braced면 손(속임수) 기술 금지, limited면 판당 1회. 예전 저장에 없으면 'normal'. */
   wristState: WristState;
+  /** 끝까지 본 이야기 라벨(요청 17, SKIP 버튼 활성 기준 — 표시용, 분기에는 쓰지 않는다). 예전 저장에 없으면 빈 목록. */
+  seenStories: string[];
 };
 
 export type WristState = 'normal' | 'braced' | 'limited' | 'healed';
@@ -57,7 +59,7 @@ export function canTaeohStake(p: Progress, place: PlaceId): boolean { return pla
 
 export const initialSerin = (): SerinState => ({ affinity: 0, visits: 0, lastEventDay: 0, lastVisitDay: 0, pity: 0, seen: [] });
 export function initialProgress(): Progress {
-  return { day: 1, money: START_MONEY, chapterId: 'prologue', unlockedPlaces: ['barber'], skills: [], focusMax: FOCUS_BASE, focus: FOCUS_BASE, flags: {}, bag: {}, serin: initialSerin(), counters: {}, gear: [], wristState: 'normal' };
+  return { day: 1, money: START_MONEY, chapterId: 'prologue', unlockedPlaces: ['barber'], skills: [], focusMax: FOCUS_BASE, focus: FOCUS_BASE, flags: {}, bag: {}, serin: initialSerin(), counters: {}, gear: [], wristState: 'normal', seenStories: [] };
 }
 
 /** 저장소 추상화(테스트에서는 메모리 객체). */
@@ -98,6 +100,7 @@ export function deserialize(text: string): Progress | null {
       flags, bag, serin, counters,
       gear: Array.isArray(o.gear) ? Array.from(new Set(o.gear.filter(isItemId))).slice(0, GEAR_SLOTS) : [],
       wristState: isWristState(o.wristState) ? o.wristState : 'normal',
+      seenStories: Array.isArray(o.seenStories) ? (o.seenStories as unknown[]).filter((x): x is string => typeof x === 'string').slice(0, 300) : [],
     };
   } catch { return null; }
 }
@@ -192,6 +195,12 @@ export function unequipGear(p: Progress, id: ItemId): Progress | null {
   if (!p.gear.includes(id)) return null;
   return addToBag({ ...p, gear: p.gear.filter(g => g !== id) }, id);
 }
+// ---- 이야기 열람 기록(요청 17) ----
+/** 이 라벨의 이야기를 끝까지 본 적이 있는가(SKIP 활성 기준). */
+export const hasSeenStory = (p: Progress, labelText: string): boolean => p.seenStories.includes(labelText);
+/** 열람 기록 추가. 이미 있으면 같은 객체를 돌려준다(저장 생략 판단용). */
+export const markStorySeen = (p: Progress, labelText: string): Progress => (hasSeenStory(p, labelText) ? p : { ...p, seenStories: [...p.seenStories, labelText] });
+
 // ---- 출입 금지(들통) ----
 export function isBanned(p: Progress, place: PlaceId): boolean { return p.flags[banKey(place, p.day)] === true; }
 export function banPlace(p: Progress, place: PlaceId): Progress { return setFlag(p, banKey(place, p.day)); }

@@ -29,8 +29,11 @@ export type TableLaunch = {
   /** 5장 첫 항구 판: 태오가 판돈을 댔다(지면 손실 0, 이기면 정상 획득). */
   staked?: boolean;
 };
-/** 이야기 화면 시작 데이터. 마지막 장면 뒤 onDone이 다음 단계로 보낸다. */
-export type StoryLaunch = { label: string; scenes: Scene[]; onDone: (scene: Phaser.Scene) => void };
+/** 이야기 끝 선택지(요청 17): 마지막 장면 뒤 대사 박스 위에 세로 버튼으로 나온다. 고르면 onDone 대신 pick이 다음으로 보낸다. */
+export type StoryChoiceOption = { text: string; pick: (scene: Phaser.Scene) => void };
+export type StoryChoice = { prompt?: string; options: StoryChoiceOption[] };
+/** 이야기 화면 시작 데이터. 마지막 장면 뒤 onDone이 다음 단계로 보낸다(choice가 있으면 선택이 대신한다). */
+export type StoryLaunch = { label: string; scenes: Scene[]; onDone: (scene: Phaser.Scene) => void; choice?: StoryChoice };
 /** 여정 지도 시작 데이터: 방금 끝낸 장의 보상, 안내 창, 돈 변화 표시, 서린 사건 선택, 바로 열 장소 모달. */
 export type JourneyLaunch = {
   chapterDone?: ChapterId; reward?: SkillId; unlocked?: PlaceId[];
@@ -55,8 +58,8 @@ export type JourneyLaunch = {
 export const SCENE_KEYS = { boot: 'boot', journey: 'journey', story: 'story', table: 'table' } as const;
 
 export function goJourney(scene: Phaser.Scene, data: JourneyLaunch = {}) { scene.scene.start(SCENE_KEYS.journey, data); }
-export function playStory(scene: Phaser.Scene, label: string, scenes: Scene[], onDone: StoryLaunch['onDone']) {
-  const data: StoryLaunch = { label, scenes, onDone };
+export function playStory(scene: Phaser.Scene, label: string, scenes: Scene[], onDone: StoryLaunch['onDone'], choice?: StoryChoice) {
+  const data: StoryLaunch = { label, scenes, onDone, choice };
   scene.scene.start(SCENE_KEYS.story, data);
 }
 export function startTable(scene: Phaser.Scene, launch: TableLaunch) { scene.scene.start(SCENE_KEYS.table, launch); }

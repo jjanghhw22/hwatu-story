@@ -32,3 +32,17 @@
 | `public/assets/ui/icon_skill_swap.png` | 64×64 | 예 | 기술 아이콘 — 바꿔치기(소매 속 카드) |
 | `public/assets/ui/icon_brace.png` | 64×64 | 예 | 손목 보호대 오버레이 — 손 기술 제한 구간에 기술 아이콘 위를 덮는 붕대 감은 손목 |
 | `public/assets/ui/icon_fold.png` | 48×48 | 예 | 접기(기권) 버튼 아이콘 — 엎어 놓은 패 |
+
+## 4단계 — 대화·컷씬 연출 리뉴얼 (요청 17)
+
+파일이 생길 때까지: 컷은 theme panel 폴백, 표정은 기본(neutral) 초상으로 대신한다. 이미 있는 초상 15장(`characters/*-neutral.png`)은 여기 다시 올리지 않는다.
+표정 그림은 파일을 넣은 뒤 `src/character.ts`의 `portraits`에 경로 한 줄을 추가해야 적용된다(없는 표정은 neutral로 자동 대체).
+
+| 파일 | 크기(px) | 투명배경 | 내용 |
+| --- | --- | --- | --- |
+| `public/assets/story/ch1-barber.png` | 720×480 | 아니오 | 1장 컷 — 보관증을 들고 대식에게 가는 도윤 |
+| `public/assets/story/ch1-lock.png` | 720×480 | 아니오 | 1장 컷 — 보관증을 보고 출입문을 잠그는 대식 |
+| `public/assets/story/ch1-blanket.png` | 720×480 | 아니오 | 1장 컷 — 초록 담요를 펴는 손 |
+| `public/assets/story/ch1-box.png` | 720×480 | 아니오 | 1장 컷 — 철제 상자(젊은 아버지 사진·수첩·비광 한 장) |
+| `public/assets/story/ch2-*.png ~ ch11-*.png, gift-watch.png` (42장) | 720×480 | 아니오 | 2~11장 컷 — 파일명·장면은 `src/story/chapters.ts`의 `cut('파일명', '지문')` 호출 명단이 원본. 생기는 대로 같은 경로에 넣으면 웹툰 패널로 자동 전환 |
+| `public/assets/characters/<id>-happy.png` 등 표정 변형(행복·놀람·당황·패배, 필요 인물부터) | neutral 원본과 동일 크기·구도 | 예 | 대화 초상 표정 변형 — 차분한 기본은 기존 neutral, 표정은 같은 인물 같은 구도에서 얼굴만 바뀐 버전 |
