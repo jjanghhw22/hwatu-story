@@ -9,7 +9,8 @@
 
 ## 2단계 — 프롤로그 4컷·1장 커버 (요청 15)
 
-아직 없는 그림 5장. 파일이 생길 때까지 게임은 theme panel 색 배경 + 글자 연출로 대체한다(의도된 폴백, 재요청 없음).
+파일이 생길 때까지 게임은 theme panel 색 배경 + 글자 연출로 대체한다(의도된 폴백, 재요청 없음).
+**2026-11-06 반영(hwatu_assets_2nd.zip):** prologue-1~4 들어옴. cover-*.png는 아직 없음(타이틀 박스는 chapter_key가 대신하므로 cover는 사실상 chapter_key 폴백용).
 
 | 파일 | 크기(px) | 투명배경 | 내용 |
 | --- | --- | --- | --- |
@@ -36,6 +37,7 @@
 ## 4단계 — 대화·컷씬 연출 리뉴얼 (요청 17)
 
 파일이 생길 때까지: 컷은 theme panel 폴백, 표정은 기본(neutral) 초상으로 대신한다. 이미 있는 초상 15장(`characters/*-neutral.png`)은 여기 다시 올리지 않는다.
+**2026-11-06 반영:** ch1-barber(원명 ch1-receipt에서 복사)·ch1-lock·ch1-blanket 들어옴. ch1-box와 ch2~ch11 컷은 아직 없음. ch1-hand.png(화투 쥔 손)는 대응하는 cut() 참조가 없어 미사용 대기.
 표정 그림은 파일을 넣은 뒤 `src/character.ts`의 `portraits`에 경로 한 줄을 추가해야 적용된다(없는 표정은 neutral로 자동 대체).
 
 | 파일 | 크기(px) | 투명배경 | 내용 |
@@ -50,6 +52,7 @@
 ## 5단계 — 여정 지도 리뉴얼 (요청 18)
 
 파일이 생길 때까지: 챕터 키는 theme panel 색 + 제목, 지도 배경은 바탕색 그대로, 노드 안은 기존 인물 초상(`characters/*-neutral.png` 재사용), 아이콘은 theme 색 도형 + 글자로 대신한다(의도된 폴백, 재요청 없음).
+**2026-11-06 반영:** chapter_key_1~11, map_paper_bg, icon_talk·match·search·lock·note 들어옴(아이콘 5종은 64×64로 와서 명세 크기로 리사이즈). chapter_key_0(프롤로그)·chapter_key_12(에필로그)·icon_place_{id} 8종은 아직 없음. 원본 zip은 `art/hwatu_assets_2nd.zip`.
 
 | 파일 | 크기(px) | 투명배경 | 내용 |
 | --- | --- | --- | --- |
