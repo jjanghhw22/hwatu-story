@@ -46,3 +46,18 @@
 | `public/assets/story/ch1-box.png` | 720×480 | 아니오 | 1장 컷 — 철제 상자(젊은 아버지 사진·수첩·비광 한 장) |
 | `public/assets/story/ch2-*.png ~ ch11-*.png, gift-watch.png` (42장) | 720×480 | 아니오 | 2~11장 컷 — 파일명·장면은 `src/story/chapters.ts`의 `cut('파일명', '지문')` 호출 명단이 원본. 생기는 대로 같은 경로에 넣으면 웹툰 패널로 자동 전환 |
 | `public/assets/characters/<id>-happy.png` 등 표정 변형(행복·놀람·당황·패배, 필요 인물부터) | neutral 원본과 동일 크기·구도 | 예 | 대화 초상 표정 변형 — 차분한 기본은 기존 neutral, 표정은 같은 인물 같은 구도에서 얼굴만 바뀐 버전 |
+
+## 5단계 — 여정 지도 리뉴얼 (요청 18)
+
+파일이 생길 때까지: 챕터 키는 theme panel 색 + 제목, 지도 배경은 바탕색 그대로, 노드 안은 기존 인물 초상(`characters/*-neutral.png` 재사용), 아이콘은 theme 색 도형 + 글자로 대신한다(의도된 폴백, 재요청 없음).
+
+| 파일 | 크기(px) | 투명배경 | 내용 |
+| --- | --- | --- | --- |
+| `public/assets/story/chapter_key_{n}.png` (n = 장 번호 0~12, 13장) | 720×240 | 아니오 | 챕터 타이틀 박스 배경 키 일러스트 — 0 프롤로그(봉투), 1~11 각 장 핵심 장면, 12 에필로그(머리 자르는 날). 하단 1/2에 검정 그라데이션과 금색 제목이 얹히므로 주요 피사체는 위쪽에 |
+| `public/assets/ui/map_paper_bg.png` | 720×900 | 아니오 | 지도 영역 배경 — 종이 질감 손그림 약도(백운시 거리, 세로 지그재그 경로가 어울리게). 비율 유지로 축소되어 깔린다 |
+| `public/assets/ui/icon_place_{장소id}.png` — barber·home·store·bath·market·harbor·billiards·hotel (8종) | 96×96 | 예 | 장소 아이콘 — 노드 안 인물 초상이 없을 때 대신 표시(가위·집·간판·수증기·장바구니·닻·당구공·호텔 열쇠 등 장소 상징) |
+| `public/assets/ui/icon_talk.png` | 40×40 | 예 | 행동 아이콘 — 대화(말풍선) |
+| `public/assets/ui/icon_match.png` | 40×40 | 예 | 행동 아이콘 — 대결(화투패 두 장) |
+| `public/assets/ui/icon_search.png` | 40×40 | 예 | 행동 아이콘 — 조사(돋보기) |
+| `public/assets/ui/icon_lock.png` | 40×40 | 예 | 잠긴 노드 자물쇠 |
+| `public/assets/ui/icon_note.png` | 48×48 | 예 | DAY 바 '기록 N건' 버튼 옆 수첩 아이콘 |

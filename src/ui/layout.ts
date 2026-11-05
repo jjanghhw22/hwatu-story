@@ -510,10 +510,13 @@ export function focusBarRect(reg: Rect): Rect {
 // ---- 여정 지도 ----
 /** 여정 지도: 머리 패널(day·소지금·압류 예고), 장소 노드(세로 지그재그 원), 아래 메뉴 버튼. 세로 간격은 화면 높이에 맞춰 늘린다. */
 export const JOURNEY = {
-  /** 맨 위 현재 장 대표 컷(640×240, 그림 없으면 어두운 패널에 장 제목). */
-  cover: { w: 640, h: 240, y: 16 },
-  header: { y: 16 + 240 + 12, h: 104 },
-  node: { r: 44, ring: 4, xLeft: 210, xRight: 510, firstY: 16 + 240 + 12 + 104 + 60, stepMin: 88, stepMax: 140, labelGap: 8 },
+  /** 맨 위 챕터 타이틀 박스(요청 18): 챕터 키 일러스트 720×240 전면 + 하단 그라데이션 + 제목 h1(그림 없으면 theme panel 폴백). */
+  cover: { w: 720, h: 240, y: 0 },
+  header: { y: 240 + 12, h: 104 },
+  /** r: 노드 간격 계산 기준(journeyNodes). rNext/rSmall: 현재(지름 120)·방문/잠김(지름 96) 표시 반지름(요청 18). */
+  node: { r: 44, rNext: 60, rSmall: 48, ring: 4, xLeft: 210, xRight: 510, firstY: 240 + 12 + 104 + 68, stepMin: 88, stepMax: 140, labelGap: 8 },
+  /** 종이 약도 배경 원본 크기(map_paper_bg.png). 남은 높이에 맞춰 비율 유지로 줄인다. */
+  map: { w: 720, h: 900 },
   bottom: { h: 56, pad: 14 },
   /** 밤 → 아침 전환(검은 막) 전체 시간(ms). */
   nightMs: 400,

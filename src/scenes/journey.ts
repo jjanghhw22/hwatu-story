@@ -3,7 +3,7 @@
 import Phaser from 'phaser';
 import { seededRng } from '../rng';
 import { SCENARIOS } from '../scenarios';
-import { CH5_RAMEN_SCENES, CH7_COURIER, CH7_VISITOR, CHAPTERS, type ChapterId, GIFT_SCENES, SERIN_LAST_ITEM, SERIN_ROUTE_ASK, SERIN_ROUTE_REPLY, TAEOH_STAKE_SCENES, type Chapter, NIGHT_CH6_SCENES, type Scene, chapterById, chapterLabel, isChapterImplemented, placeOpensLabel } from '../story/chapters';
+import { CH5_RAMEN_SCENES, CH7_COURIER, CH7_VISITOR, CHAPTERS, type ChapterId, GIFT_SCENES, SERIN_LAST_ITEM, SERIN_ROUTE_ASK, SERIN_ROUTE_REPLY, TAEOH_STAKE_SCENES, type Chapter, NIGHT_CH6_SCENES, type Scene, chapterById, chapterLabel, isChapterImplemented } from '../story/chapters';
 import { ERRANDS, type ErrandId, canChallengeBokhee, completeErrand, errandById, errandsDone, isErrandDone } from '../story/errands';
 import { FLAGS, type ItemId, itemById, shopItems } from '../story/items';
 import { MIN_STAKE_POINTS, PLACES, PLACE_IDS, type PlaceId, canSit, isPlaceReady } from '../story/places';
@@ -12,7 +12,7 @@ import { GEAR_SLOTS } from '../story/items';
 import { CHARM_FLAG, GATES, type GateNo, type SerinRoute, canChallengeGate, ch10Pointer, gateFlag, routeStep, setRoute } from '../story/gates';
 import { ENDING_TITLES, endingsSeen, progressAtChapter } from '../story/endings';
 import { OPPONENTS } from '../story/opponents';
-import { CHARACTERS } from '../character';
+import { type CharacterId, CHARACTERS } from '../character';
 import { loadFailed, noteMissing } from '../ui/missing';
 import { type SerinEventId, applyEvent, serinEventById, tierName, visitSerin } from '../story/serin';
 import { SKILLS } from '../story/skills';
@@ -24,13 +24,25 @@ import { type ModalButton, type ModalLine, drawModal } from '../ui/modals';
 import { SoundFx } from '../ui/sound';
 import { COLORS, FONT, type UI, box, button, label, panel } from '../ui/widgets';
 import { makeButton } from '../ui/components';
-import { COLORS as TOKENS, colorNum } from '../ui/theme';
+import { circlePortraitTexture, preloadPortraits } from '../ui/portrait';
+import { COLORS as TOKENS, TEXT_STYLES, colorNum } from '../ui/theme';
 import { type JourneyLaunch, SCENE_KEYS, goJourney, playEnding, playStory, startChapterMatch, startErrandMatch, startLessonMatch, startNormalMatch, startPractice, startTable } from './flow';
 
 type Modal = 'kingChoice' | 'finalChoice' | 'routeChoice' | 'jump' | 'jumpConfirm' | 'none' | 'place' | 'menu' | 'rules' | 'credits' | 'devinfo' | 'scenarios' | 'reward' | 'box' | 'shop' | 'bag' | 'notice' | 'choice' | 'noMoney' | 'gear' | 'errands' | 'errandChoice';
-/** 노드 색: 열린 곳은 어두운 녹색 + 황동, 잠긴 곳은 회색, 오늘 출입 금지(들통)는 붉은 테두리. */
-const NODE = { open: 0x15302a, openEdge: 0xb08d4a, locked: 0x1c1c1a, lockedEdge: 0x444039, lockedText: '#6f6a60', link: 0x7a6236, banned: 0xc0392b } as const;
 const coverKey = (path: string) => `cover:${path}`;
+// ---- 지도 리뉴얼(요청 18) 그림 자리: 파일이 생기면 그대로 읽고, 없으면 theme 색 플레이스홀더로 그린다(의도된 폴백, 재요청 없음) ----
+const jmapKey = (path: string) => `jmap:${path}`;
+const chapterKeyPath = (no: number) => `assets/story/chapter_key_${no}.png`;
+const MAP_BG = 'assets/ui/map_paper_bg.png';
+const NOTE_ICON = 'assets/ui/icon_note.png';
+const LOCK_ICON = 'assets/ui/icon_lock.png';
+const ACTION_ICONS = { talk: 'assets/ui/icon_talk.png', match: 'assets/ui/icon_match.png', search: 'assets/ui/icon_search.png' } as const;
+type NodeAction = keyof typeof ACTION_ICONS;
+/** 행동 아이콘 그림이 없을 때 원 안에 쓰는 글자(대화·대결·조사). */
+const ACTION_GLYPH: Record<NodeAction, string> = { talk: '말', match: '판', search: '조' };
+const placeIconPath = (id: PlaceId) => `assets/ui/icon_place_${id}.png`;
+/** 열린 노드 안 원형 초상: 그 장소의 대표 인물(기존 characters/*-neutral.png 재사용). 그림이 없으면 장소 아이콘 → 장소명 첫 글자. */
+const PLACE_CHARACTER: Record<PlaceId, CharacterId> = { barber: 'barber', home: 'father', store: 'seorin', bath: 'ma', market: 'bokhee', harbor: 'bonggu', billiards: 'taeoh', hotel: 'mujin' };
 const PREPARING = '다음 이야기는 아직 준비 중';
 /** 이야기 연출 데모(요청 17, 개발 정보에서만): 컷 폴백·지문·대사(초상 유/무)·선택지를 한 번에 확인한다. 장 데이터·분기는 건드리지 않는다. */
 const UI_DEMO_SCENES: Scene[] = [
@@ -68,7 +80,11 @@ export class JourneyScene extends Phaser.Scene {
   preload() {
     const c = currentChapter(loadProgress());
     if (c.cover) { const k = coverKey(c.cover); if (!this.textures.exists(k) && !loadFailed(k)) this.load.image(k, c.cover); }
-    this.load.on('loaderror', (file: { key: string; src: string }) => { if (file.key.startsWith('cover:')) noteMissing(file.src, file.key); });
+    // 요청 18: 챕터 키 일러스트·종이 약도·아이콘. 없으면 theme 폴백으로 그리고, 실패한 키는 다시 요청하지 않는다
+    const wants = [chapterKeyPath(c.no), MAP_BG, NOTE_ICON, LOCK_ICON, ...Object.values(ACTION_ICONS), ...PLACE_IDS.map(placeIconPath)];
+    for (const path of wants) { const k = jmapKey(path); if (!this.textures.exists(k) && !loadFailed(k)) this.load.image(k, path); }
+    preloadPortraits(this.load, PLACE_IDS.map(id => CHARACTERS[PLACE_CHARACTER[id]]));
+    this.load.on('loaderror', (file: { key: string; src: string }) => { if (file.key.startsWith('cover:') || file.key.startsWith('jmap:')) noteMissing(file.src, file.key); });
   }
   create() {
     this.progress = loadProgress();
@@ -114,17 +130,20 @@ export class JourneyScene extends Phaser.Scene {
     this.children.bringToTop(this.fx.layer);
     const ui = this.ui, p = this.progress, ch = this.chapter;
     box(ui, 0, 0, DESIGN.width, DESIGN.height, COLORS.bg);
-    // 0. 맨 위 현재 장 대표 컷(640×240): 그림이 있으면 비율 유지로 맞추고, 없으면 theme panel 색 바탕에 장 제목만(의도된 폴백, 요청 15)
-    const C = JOURNEY.cover, cx0 = (DESIGN.width - C.w) / 2;
-    panel(ui, cx0, C.y, C.w, C.h, 'wood');
-    const ck = ch.cover ? coverKey(ch.cover) : undefined;
-    if (ck && this.textures.exists(ck)) {
-      const img = this.add.image(cx0 + C.w / 2, C.y + C.h / 2, ck);
-      img.setScale(Math.min((C.w - 16) / img.width, (C.h - 16) / img.height)); this.layer.add(img);
-    } else {
-      box(ui, cx0 + 8, C.y + 8, C.w - 16, C.h - 16, colorNum(TOKENS.panel));
-      label(ui, DESIGN.width / 2, C.y + C.h / 2, chapterLabel(ch), 22, COLORS.goldDim, C.w - 48, [0.5, 0.5], true);
+    // 0. 챕터 타이틀 박스(요청 18): 챕터 키 일러스트(chapter_key_{n} → 기존 cover → theme panel 폴백) + 하단 검정 그라데이션(알파 0→0.7) + 제목 h1
+    const C = JOURNEY.cover;
+    box(ui, 0, C.y, C.w, C.h, colorNum(TOKENS.panel));
+    const kk = jmapKey(chapterKeyPath(ch.no)), ck = ch.cover ? coverKey(ch.cover) : undefined;
+    const art = this.textures.exists(kk) ? kk : ck && this.textures.exists(ck) ? ck : undefined;
+    if (art) {
+      const img = this.add.image(C.w / 2, C.y + C.h / 2, art);
+      img.setScale(Math.min(C.w / img.width, C.h / img.height)); this.layer.add(img);
     }
+    const grad = this.add.graphics(), sh = colorNum(TOKENS.shadow);
+    grad.fillGradientStyle(sh, sh, sh, sh, 0, 0, 0.7, 0.7);
+    grad.fillRect(0, C.y + C.h - 120, C.w, 120);
+    this.layer.add(grad);
+    this.layer.add(this.add.text(MARGIN + 8, C.y + C.h - 14, chapterLabel(ch), { ...TEXT_STYLES.h1, wordWrap: { width: C.w - MARGIN * 2 - 16 } }).setOrigin(0, 1));
     // 1. 머리: day · 소지금 · 현재 장 · 압류 예고(작게, 붉은 글자) · 집중력·기술 · 가방 버튼
     const H = JOURNEY.header;
     panel(ui, MARGIN, H.y, DESIGN.width - MARGIN * 2, H.h, 'wood');
@@ -137,24 +156,59 @@ export class JourneyScene extends Phaser.Scene {
     else label(ui, DESIGN.width - MARGIN - 24, H.y + 44, `압류 예고 ${formatManWon(SEIZURE_NOTICE)}`, 13, COLORS.bakWarn, 240, [1, 0], true);
     label(ui, MARGIN + 24, H.y + 72, `집중력 ${p.focus}/${p.focusMax}  ·  기술 ${p.skills.length ? p.skills.map(s => SKILLS[s].name).join(', ') : '없음'}`, 13, COLORS.goldDim, 420, [0, 0]);
     const bagN = Object.values(p.bag).reduce((s, n) => s + (n ?? 0), 0);
-    button(ui, DESIGN.width - MARGIN - 24 - 110, H.y + 64, 110, `가방 ${bagN}`, () => this.switchModal('none', 'bag'), this.modal === 'none' && !this.busy, 28, 14);
-    // 2. 장소 노드: 세로 지그재그. 이음선 → 원 → 이름 → 잠김 안내. 다음 목적지에 금색 테두리 + ▶
-    const pos = journeyNodes(PLACE_IDS.length);
-    for (let i = 1; i < pos.length; i++) {
-      const a = pos[i - 1], b = pos[i];
-      this.layer.add(this.add.line(0, 0, a.x, a.y, b.x, b.y, NODE.link, 0.45).setOrigin(0).setLineWidth(2));
+    // 요청 18: '가방 N' → 수첩 아이콘 + '기록 N건'(기능은 그대로 가방 창. 아이콘 그림이 없으면 theme 색 수첩 모양)
+    const bx = DESIGN.width - MARGIN - 24 - 110, by = H.y + 64;
+    const nk = jmapKey(NOTE_ICON);
+    if (this.textures.exists(nk)) this.layer.add(this.add.image(bx - 22, by + 14, nk).setDisplaySize(32, 32));
+    else {
+      const note = this.add.graphics();
+      note.fillStyle(colorNum(TOKENS.panel), 1).fillRoundedRect(bx - 33, by + 1, 22, 26, 3);
+      note.lineStyle(1, colorNum(TOKENS.goldDim), 1).strokeRoundedRect(bx - 33, by + 1, 22, 26, 3);
+      note.lineStyle(1, colorNum(TOKENS.textDim), 1);
+      for (let i = 0; i < 3; i++) note.lineBetween(bx - 29, by + 8 + i * 6, bx - 15, by + 8 + i * 6);
+      this.layer.add(note);
     }
-    const r = JOURNEY.node.r, next = this.nextPlace;
+    button(ui, bx, by, 110, `기록 ${bagN}건`, () => this.switchModal('none', 'bag'), this.modal === 'none' && !this.busy, 28, 14);
+    // 2. 지도(요청 18): 종이 약도 배경(없으면 바탕색 그대로) + goldDim 점선 이음선 + 노드 3상태(현재 120·방문 96·잠김 96)
+    const mapTop = H.y + H.h + 8, mapBottom = DESIGN.height - JOURNEY.bottom.h - JOURNEY.bottom.pad * 2;
+    const mk = jmapKey(MAP_BG);
+    if (this.textures.exists(mk)) {
+      const im = this.add.image(DESIGN.width / 2, 0, mk);
+      const sc = Math.min(DESIGN.width / im.width, (mapBottom - mapTop) / im.height);
+      im.setScale(sc).setY(mapTop + (im.height * sc) / 2);
+      this.layer.add(im);
+    }
+    const pos = journeyNodes(PLACE_IDS.length);
+    const links = this.add.graphics();
+    links.lineStyle(2, colorNum(TOKENS.goldDim), 0.7);
+    for (let i = 1; i < pos.length; i++) {
+      const a = pos[i - 1], b = pos[i], len = Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y);
+      const dash = 8, gap = 7, n = Math.floor(len / (dash + gap));
+      for (let k = 0; k < n; k++) {
+        const t0 = (k * (dash + gap)) / len, t1 = (k * (dash + gap) + dash) / len;
+        links.lineBetween(a.x + (b.x - a.x) * t0, a.y + (b.y - a.y) * t0, a.x + (b.x - a.x) * t1, a.y + (b.y - a.y) * t1);
+      }
+    }
+    this.layer.add(links);
+    const next = this.nextPlace;
     PLACE_IDS.forEach((id, i) => {
       const place = PLACES[id], { x, y } = pos[i];
-      const open = this.isOpen(id), isNext = id === next, banned = isBanned(p, id);
-      this.layer.add(this.add.circle(x, y + 3, r + 2, 0x000000, 0.45));
-      const circle = this.add.circle(x, y, r, open ? NODE.open : NODE.locked).setStrokeStyle(isNext || banned ? JOURNEY.node.ring : 2, banned ? NODE.banned : isNext ? 0xe0b64f : open ? NODE.openEdge : NODE.lockedEdge);
+      const open = this.isOpen(id), isNext = id === next && open, banned = isBanned(p, id);
+      const r = isNext ? JOURNEY.node.rNext : JOURNEY.node.rSmall;
+      this.layer.add(this.add.circle(x, y + 3, r + 2, colorNum(TOKENS.shadow), 0.45));
+      const circle = this.add.circle(x, y, r, colorNum(open ? TOKENS.panel : TOKENS.bg))
+        .setStrokeStyle(banned || isNext ? JOURNEY.node.ring : 2, colorNum(banned ? TOKENS.red : isNext ? TOKENS.gold : TOKENS.panelBorder));
       this.layer.add(circle);
-      label(ui, x, y, place.name, place.name.length > 4 ? 15 : 17, open ? COLORS.text : NODE.lockedText, r * 2 - 6, [0.5, 0.5], true).setName(`place:${id}`);
-      if (!open) label(ui, x, y + r + JOURNEY.node.labelGap, placeOpensLabel(place.opensAt) ?? '', 12, NODE.lockedText, 160, [0.5, 0]);
-      if (isNext) label(ui, x - r - 14, y, '▶', 22, COLORS.gold, 40, [1, 0.5], true);
-      if (isNext && id === 'store' && ch10Pointer(p) === 'store') label(ui, x, y + r + JOURNEY.node.labelGap, '서린이 잠깐 들르래.', 12, COLORS.gold, 200, [0.5, 0]);
+      if (open) this.drawNodeFace(id, x, y, r);
+      // 방문함 70%·잠김 35% 밝기: 어둡기 막을 올린다
+      if (!isNext) this.layer.add(this.add.circle(x, y, r, colorNum(TOKENS.shadow), open ? 0.3 : 0.65));
+      if (!open) this.drawLockIcon(x, y);
+      this.layer.add(this.add.text(x, y + r + 6, open ? place.name : '???', { ...TEXT_STYLES.caption, fontSize: 14, color: isNext ? TOKENS.text : TOKENS.textDim, fontStyle: isNext ? 'bold' : 'normal' }).setOrigin(0.5, 0).setName(`place:${id}`));
+      if (isNext) {
+        this.layer.add(this.add.text(x - r - 12, y, '▶', { ...TEXT_STYLES.h2, fontSize: 22, color: TOKENS.gold }).setOrigin(1, 0.5));
+        this.drawNodeActions(id, x, y + r + 28);
+        if (id === 'store' && ch10Pointer(p) === 'store') this.layer.add(this.add.text(x, y + r + 76, '서린이 잠깐 들르래.', { ...TEXT_STYLES.caption, fontSize: 12, color: TOKENS.gold }).setOrigin(0.5, 0));
+      }
       circle.setInteractive({ useHandCursor: true }).on('pointerdown', () => this.openPlace(id));
     });
     // 3. 아래 메뉴 — 새 디자인 토큰 검증용으로 이 버튼만 components.makeButton(theme.ts)으로 그린다(요청 13)
@@ -163,6 +217,46 @@ export class JourneyScene extends Phaser.Scene {
     menu.setEnabled(this.modal === 'none' && !this.busy);
     this.layer.add(menu.container);
     this.drawModals();
+  }
+  /** 현재 진행에서 그 장소가 제공하는 행동(대화·대결·조사). 행동 메뉴의 버튼 구성과 같은 기준의 요약. */
+  nodeActions(id: PlaceId): NodeAction[] {
+    const p = this.progress, out: NodeAction[] = [];
+    if (id === 'barber' || id === 'store') out.push('talk');
+    const match = id === 'home' ? !isNightLocked(p) : id === 'billiards' ? p.chapterId === 'ch8' : true;
+    if (match) out.push('match');
+    if (id === 'home' || (id === 'market' && (p.chapterId === 'ch4' || errandsDone(p) > 0))) out.push('search');
+    return out;
+  }
+  /** 현재 노드 아래 행동 아이콘 줄(40×40). 그림이 없으면 theme 색 원 + 글자. */
+  drawNodeActions(id: PlaceId, cx: number, topY: number) {
+    const acts = this.nodeActions(id), size = 40, gap = 10;
+    const total = acts.length * size + (acts.length - 1) * gap;
+    acts.forEach((a, i) => {
+      const x = cx - total / 2 + size / 2 + i * (size + gap), y = topY + size / 2;
+      const ik = jmapKey(ACTION_ICONS[a]);
+      if (this.textures.exists(ik)) { this.layer.add(this.add.image(x, y, ik).setDisplaySize(size, size)); return; }
+      this.layer.add(this.add.circle(x, y, size / 2 - 2, colorNum(TOKENS.panel)).setStrokeStyle(1, colorNum(TOKENS.goldDim)));
+      this.layer.add(this.add.text(x, y, ACTION_GLYPH[a], { ...TEXT_STYLES.caption, fontSize: 14, color: TOKENS.text }).setOrigin(0.5));
+    });
+  }
+  /** 노드 안 그림: 대표 인물 원형 초상 → 장소 아이콘 → 장소명 첫 글자(자리 표시). */
+  drawNodeFace(id: PlaceId, x: number, y: number, r: number) {
+    const inner = r - 5;
+    const key = circlePortraitTexture(this, CHARACTERS[PLACE_CHARACTER[id]], 'normal', inner);
+    if (key) { this.layer.add(this.add.image(x, y, key).setDisplaySize(inner * 2, inner * 2)); return; }
+    const ik = jmapKey(placeIconPath(id));
+    if (this.textures.exists(ik)) { this.layer.add(this.add.image(x, y, ik).setDisplaySize(Math.round(inner * 1.2), Math.round(inner * 1.2))); return; }
+    this.layer.add(this.add.text(x, y, PLACES[id].name.slice(0, 1), { ...TEXT_STYLES.h2, fontSize: Math.round(r * 0.7), color: TOKENS.textDim }).setOrigin(0.5));
+  }
+  /** 잠김 노드의 자물쇠(40×40). 그림이 없으면 theme 색으로 고리 + 몸통을 그린다. */
+  drawLockIcon(x: number, y: number) {
+    const lk = jmapKey(LOCK_ICON);
+    if (this.textures.exists(lk)) { this.layer.add(this.add.image(x, y, lk).setDisplaySize(40, 40)); return; }
+    const g = this.add.graphics();
+    g.lineStyle(3, colorNum(TOKENS.textDim), 1);
+    g.beginPath(); g.arc(x, y - 6, 8, Math.PI, Math.PI * 2); g.strokePath();
+    g.fillStyle(colorNum(TOKENS.textDim), 1).fillRoundedRect(x - 11, y - 6, 22, 16, 3);
+    this.layer.add(g);
   }
   openPlace(id: PlaceId) {
     if (this.modal !== 'none' || this.busy) return;
@@ -224,11 +318,8 @@ export class JourneyScene extends Phaser.Scene {
     if (this.modal === 'place' && this.selected) {
       const id = this.selected, place = PLACES[id];
       if (!this.isOpen(id)) {
-        const at = place.opensAt === 'start' ? undefined : chapterById(place.opensAt);
-        drawModal(ui, { title: `${place.name} · 잠김`, alpha: 0.85, lines: [
-          { text: at ? `${placeOpensLabel(place.opensAt)}. ${at.no}장 ‘${at.title}’은 다음 단계에서 열립니다.` : '아직 열리지 않았습니다.', size: 16, color: COLORS.text },
-          { text: place.actions, size: 13 },
-        ], buttons: [close('place')] });
+        // 요청 18: 잠긴 곳은 지도와 똑같이 이름·열리는 장을 숨긴다
+        drawModal(ui, { title: '??? · 잠김', alpha: 0.85, lines: [{ text: '아직 갈 수 없는 곳이다. 이야기가 진행되면 열린다.', size: 16, color: COLORS.text }], buttons: [close('place')] });
         return;
       }
       if (isBanned(p, id)) {

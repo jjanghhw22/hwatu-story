@@ -24,7 +24,7 @@ export type PortraitView = { container: Phaser.GameObjects.Container; cx: number
  * 원형으로 잘라낸 초상화 텍스처. (인물·표정·반지름)마다 한 번만 만들고 텍스처 관리자에 남겨 두므로 새 판·매 draw에서 중복 생성되지 않는다.
  * 원본에서 정사각형(cropSquare)을 잘라 정사각형 캔버스에 그리므로 비율이 유지된다. 그림이 없으면 undefined.
  */
-function circlePortraitKey(scene: Phaser.Scene, c: Character, mood: Mood, r: number): string | undefined {
+export function circlePortraitTexture(scene: Phaser.Scene, c: Character, mood: Mood, r: number): string | undefined {
   const src = portraitKeyCandidates(c, mood).find(k => scene.textures.exists(k));
   if (!src) return undefined;
   const key = `${src}-circle-${r}`;
@@ -52,7 +52,7 @@ export function drawPortrait(ui: UI, cx: number, cy: number, r: number, c: Chara
   container.add(s.add.circle(cx, cy + 2, r + 4, 0x0a0806, 0.5));
   container.add(s.add.circle(cx, cy, r + 3, active ? COLORS.cardSelectedEdge : COLORS.brass));
   container.add(s.add.circle(cx, cy, r, 0x1b2a26));
-  const key = circlePortraitKey(s, c, mood, r);
+  const key = circlePortraitTexture(s, c, mood, r);
   if (key) {
     container.add(s.add.image(cx, cy, key).setScale(1 / PORTRAIT_SUPERSAMPLE));
   } else {
