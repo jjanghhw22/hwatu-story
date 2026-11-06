@@ -63,4 +63,8 @@
 | `public/assets/ui/icon_match.png` | 40×40 | 예 | 행동 아이콘 — 대결(화투패 두 장) |
 | `public/assets/ui/icon_search.png` | 40×40 | 예 | 행동 아이콘 — 조사(돋보기) |
 | `public/assets/ui/icon_lock.png` | 40×40 | 예 | 잠긴 노드 자물쇠 |
-| `public/assets/ui/icon_note.png` | 48×48 | 예 | DAY 바 '기록 N건' 버튼 옆 수첩 아이콘 |
+| `public/assets/ui/icon_note.png` | 48×48 | 예 | DAY 바 '기록 N건' 버튼 옆 수첩 아이콘. 대국 결과 전표의 "수첩에 기록됨" 줄(요청 19)에도 재사용(28×28 축소 표시, 없으면 theme 색 수첩 모양) |
+
+## 6단계 — 대국 결과 정산 연출 (요청 19)
+
+새 에셋 없음: 전표 종이는 theme 패널(makePanel)로, 수첩 아이콘은 5단계 `icon_note.png`를 재사용한다. 전표 종이 질감 그림이 필요해지면 여기에 추가한다.

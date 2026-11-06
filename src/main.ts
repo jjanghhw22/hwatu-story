@@ -10,7 +10,8 @@ import {CHARACTERS,type Character,MOODS,type Mood,PLAYER} from './character';
 import {type Chapter,ch8Choice,chapterById,chapterLabel,chapterWinVariant} from './story/chapters';
 import {OPPONENTS,type OpponentProfile,resolveOpponent} from './story/opponents';
 import {SKILLS,SKILL_IDS,type SkillId} from './story/skills';
-import {type Progress,type WristState,addMoney,banPlace,bump,winsKey,canSpendFocus,formatWon,formatWonDelta,loadProgress,saveProgress,setFlag,settleStakeStaked,TAEOH_STAKED_FLAG,skillCostWithBoost,spendFocus,takeFromBag,withFocus} from './story/progress';
+import {type Progress,type WristState,addMoney,banPlace,bump,counter,winsKey,canSpendFocus,formatWon,formatWonDelta,loadProgress,saveProgress,setFlag,settleStakeStaked,TAEOH_STAKED_FLAG,skillCostWithBoost,spendFocus,takeFromBag,withFocus} from './story/progress';
+import {PLACES} from './story/places';
 import {FLAGS,itemById} from './story/items';
 import {provokedPolicy} from './story/policies';
 import {type TauntState,afterGoStop,calm,markShown,newTauntState,pickTaunt,shouldTaunt} from './story/taunt';
@@ -45,15 +46,19 @@ import {drawCardFace,drawChanceCard} from './ui/cardView';
 import {type PlayerInfoView,drawCaptured,drawPlayerInfo} from './ui/panels';
 import {type PortraitView,portraitReact,preloadPortraits} from './ui/portrait';
 import {drawTable} from './ui/table';
-import {type ModalButton,type ModalLine,drawCapturedView,drawModal} from './ui/modals';
+import {type ModalButton,drawCapturedView,drawModal} from './ui/modals';
 import {drawGallery} from './ui/gallery';
 import {missingCardTextures,preloadCardAssets} from './ui/cardAssets';
 import {type BannerStyle,CardFx,FX,FxSettings} from './ui/fx';
+import {receiptRows,showResultBoard} from './ui/result';
+import {loadFailed,noteMissing} from './ui/missing';
 import {SlideTracker} from './ui/slide';
 import {SoundFx} from './ui/sound';
 import {VoiceFx} from './ui/voice';
 import {type HandSlot,actionForTap,bakWarnings,bonusCards,captureKind,dealOrder,handDisplay,nearBonuses,newBonuses} from './ui/turnPlan';
 const GUKJIN_ID=CARDS.find(c=>c.gukjin)!.id;
+/** 결과 전표의 수첩 아이콘(여정 지도와 같은 파일, 키만 다름). 없으면 theme 색 수첩 모양 폴백. */
+const NOTE_ICON_PATH='assets/ui/icon_note.png', NOTE_ICON_KEY=`table:${NOTE_ICON_PATH}`;
 /** 개발용 AI 판단 로그(브라우저 콘솔 debug 수준). */
 const AI_LOG=true;
 const aiLog=(what:string,why:string)=>{if(AI_LOG)console.debug(`[AI ${what}] ${why}`);};
@@ -178,9 +183,8 @@ class TableScene extends Phaser.Scene {
   /** 이 판에서 컴퓨터가 완료한 행동 수(일반 내기·폭탄·기회 패). 흔들기 공개는 세지 않는다. 새 판에서 0. */
   aiActions=0;
   dialog=new DialogPolicy(OPPONENTS.barber.lines,3);
-  /** 결과창: 차례로 드러난 항목 수. 누르면 전체. */
-  resultShown=0; resultTimer?:Phaser.Time.TimerEvent; restarting=false;
-  /** 결과창에 보여줄 상대 반응 대사. */
+  restarting=false;
+  /** 결과 전표에 보여줄 상대 반응 대사. */
   resultLine='';
   /** 큰 획득패 목록을 여는 대상 플레이어. */
   capturedViewPlayer=0;
@@ -229,7 +233,12 @@ class TableScene extends Phaser.Scene {
     // 백무진 2단계: 판돈 ×2를 받으면 고 정책이 공격적(최대 2고)
     if(this.profile.king)this.opponent=provokedPolicy(this.opponent,()=>this.betAccepted,KING.stage2MaxGo);
   }
-  preload(){preloadCardAssets(this.load);preloadPortraits(this.load,[this.oppChar,PLAYER]);}
+  preload(){
+    preloadCardAssets(this.load);preloadPortraits(this.load,[this.oppChar,PLAYER]);
+    // 결과 전표의 수첩 아이콘(요청 19): 없으면 theme 폴백으로 그리고, 실패한 키는 다시 요청하지 않는다
+    if(!this.textures.exists(NOTE_ICON_KEY)&&!loadFailed(NOTE_ICON_KEY))this.load.image(NOTE_ICON_KEY,NOTE_ICON_PATH);
+    this.load.on('loaderror',(file:{key:string;src:string})=>{if(file.key===NOTE_ICON_KEY)noteMissing(file.src,file.key);});
+  }
   create(){
     this.timerGfx=this.add.graphics().setDepth(50);
     this.timerText=this.add.text(DESIGN.width/2,0,'',{fontFamily:'"NanumGothic", sans-serif',fontSize:40,fontStyle:'bold',color:COLORS.text,stroke:'#000000',strokeThickness:6}).setOrigin(0.5).setDepth(51).setVisible(false);
@@ -239,7 +248,7 @@ class TableScene extends Phaser.Scene {
     this.phase=sc?'hand':'dealing';this.message=sc?`[시나리오] ${sc.title}: ${sc.desc}`:'';
     this.selectable=[];this.peek=false;this.turnOwner=0;this.floorSlots=new Map();this.hidden=new Set();
     this.choiceResolve=undefined;this.gukjinResolve=undefined;this.gostopResolve=undefined;
-    this.gen++;this.restarting=false;this.resultShown=0;this.resultTimer=undefined;this.resultLine='';
+    this.gen++;this.restarting=false;this.resultLine='';
     this.mood='normal';this.moodTimer=undefined;this.oppPortrait=undefined;
     this.aiActions=0;this.dialog.reset();this.aiRng=seededRng((Date.now()^Math.floor(Math.random()*0x7fffffff))>>>0);
     this.shownBase=[this.state.baseScore(0),this.state.baseScore(1)];
@@ -281,7 +290,7 @@ class TableScene extends Phaser.Scene {
     return this.chapter?chapterLabel(this.chapter):'자유 대결';
   }
   /** 이전 판의 트윈·배너·말풍선·예약 작업·소리·음성 예약을 모두 정리한다. 세대 번호를 올려 남은 비동기 처리가 새 판에 반영되지 않게 한다. */
-  teardown(){this.stopTurnTimer();this.catchTimer?.remove(false);this.catchResolve=undefined;this.betResolve=undefined;this.gen++;this.fx.clear();this.slides.reset();this.killArrows();this.time.removeAllEvents();this.tweens.killAll();this.sfx.cancel();this.voice.cancel();this.choiceResolve=undefined;this.gukjinResolve=undefined;this.gostopResolve=undefined;this.resultTimer=undefined;this.moodTimer=undefined;}
+  teardown(){this.stopTurnTimer();this.catchTimer?.remove(false);this.catchResolve=undefined;this.betResolve=undefined;this.gen++;this.fx.clear();this.slides.reset();this.killArrows();this.time.removeAllEvents();this.tweens.killAll();this.sfx.cancel();this.voice.cancel();this.choiceResolve=undefined;this.gukjinResolve=undefined;this.gostopResolve=undefined;this.moodTimer=undefined;}
   /** 새 판(같은 장·상대·연습 여부, 시나리오는 지정한 것으로). 결과창 버튼이 여러 번 눌려도 한 번만 동작한다. */
   restart(scenario?:string){if(this.restarting)return;this.restarting=true;const next:TableLaunch={...this.launch,scenario};this.scene.restart(next);}
   /** "한 판 더": 시작 데이터 그대로(이야기 장면 반복 없음). */
@@ -535,7 +544,7 @@ class TableScene extends Phaser.Scene {
     }
     if(this.phase==='swap')this.drawSwapGauge(ui);
     if(this.foldAsk&&this.phase==='hand')this.drawFoldAsk(ui);
-    this.drawModals(mine.total,theirs.total);
+    this.drawModals();
   }
   /**
    * 우측 세로 기술 패널(요청 16, theme 토큰만 사용): 보유 기술만 아이콘 버튼으로(미보유 슬롯은 표시하지 않음 — 후반 기술은 존재를 숨긴다).
@@ -630,7 +639,7 @@ class TableScene extends Phaser.Scene {
     if(warns.includes('광박'))return `상대 광 ${sc.광.cards.length}장 — 광박 위험`;
     return `상대 기본 ${this.state.baseScore(1)}점 — 박 위험 없음`;
   }
-  drawModals(myBase:number,theirBase:number){
+  drawModals(){
     const ui=this.ui, s=this.state;
     if(this.phase==='bet'){
       drawModal(ui,{title:MUJIN_BET,titleColor:COLORS.gold,edgeColor:0xb08d4a,alpha:.7,lines:[{text:'받으면 이 판 최종 점수가 두 배(누가 이기든). 백무진은 더 공격적으로 고를 부른다.',size:TEXT_MIN,color:COLORS.text},{text:'거절하면 도발 한 번. 태연한 얼굴로 막을 수 있다.',size:TEXT_MIN}],buttons:[
@@ -668,17 +677,7 @@ class TableScene extends Phaser.Scene {
         {text:`스톱  ·  ${pv.final}점으로 승리`,onTap:()=>this.decideGoStop('stop')},
       ]});
     }
-    if(this.phase==='result'&&s.result){
-      // 확정된 결과 객체만 읽는다(재정산 없음). 항목은 승패 → 상대 반응 → 기본 → 고 → 박 → 선언 배수 → 최종 순으로 차례로 드러나고, 누르면 전체.
-      const r=s.result;
-      const lines=this.resultLines(r);
-      const shown=lines.slice(0,this.resultShown);
-      const title=r.outcome!=='승리'?'나가리':r.endKind==='fold'?'접음':r.endKind==='caught'?'잡았다!':r.forfeit?'들통':r.winner===0?'승리':'패배';
-      drawModal(ui,{title,titleColor:r.outcome==='승리'?(r.winner===0?COLORS.gold:COLORS.danger):COLORS.muted,alpha:.82,onTap:()=>this.revealResult(),minBodyH:lines.length*36+70,lines:[
-        ...shown,
-        ...(this.resultShown>=lines.length?[{text:`기본 점수  나 ${myBase}점  /  ${this.names[1]} ${theirBase}점  ·  ${this.message}`,size:14}]:[]),
-      ],buttons:this.resultButtons(r.outcome==='승리'&&r.winner===0)});
-    }
+    // 'result' 단계의 정산 연출은 drawModals가 아니라 showResult가 띄우는 별도 전표(src/ui/result.ts, depth 900)가 맡는다(요청 19).
     if(this.phase==='menu'){
       const on=this.sfx.enabled, reduced=this.fxSettings.reduced;
       drawModal(ui,{title:'메뉴',lines:[{text:`소리: ${on?'켜짐':'꺼짐'}${on&&!this.sfx.ready?' (첫 터치 뒤 활성화)':''}  ·  연출 줄이기: ${reduced?'켜짐':'꺼짐'}`}],buttons:[
@@ -728,53 +727,30 @@ class TableScene extends Phaser.Scene {
       ],()=>this.switchModal('capturedView','hand'));
     }
   }
-  /** 결과창 줄: 승패 → 상대 반응 → 기본 → 고 → 박 → 선언 배수 → (미션 ×N) → 최종(미션 반영) → (판돈 정산). 확정 결과 객체만 읽고, 미션 배수는 story 계층이 곱한다. */
-  resultLines(r:NonNullable<GameState['result']>):ModalLine[]{
-    if(r.outcome!=='승리')return [{text:`“${this.resultLine}”`,size:17,color:COLORS.gold},{text:'나가리. 양쪽 행동이 모두 소진될 때까지 아무도 스톱하지 않았습니다. 승자 없음, 박·정산 없음, 다음 판 이월 없음(미션 무효).',size:17,color:COLORS.text}];
-    const mult=this.missionMult();
-    return [{text:`“${this.resultLine}”`,size:17,color:COLORS.gold},
-      {text:r.endKind==='fold'?`접음: ${this.names[1]} 기본 점수 ${r.base}점 그대로(고·박·배수 없음)`:r.endKind==='caught'?`잡았다: ${this.names[1]}의 속임수를 잡아 판 몰수. 기준 점수 ${r.base}점(최소 7)`:r.forfeit?`들통: 내 손이 잡혀 즉시 패배. 승자 기본 점수 ${r.base}점(최소 7, 박·선언 배수 없음)`:`기본 점수 ${r.base}점`,size:19,color:COLORS.text},
-      {text:r.goCount===0?'고 없음':r.goCount<=2?`${r.goCount}고  +${r.goCount}점 → ${r.settled}점`:`${r.goCount}고 → ${r.settled}점`,size:19,color:COLORS.text},
-      {text:r.baks.length?`박: ${r.baks.map(b=>`${b} ×2`).join(' · ')}`:'박 없음',size:19,color:r.baks.length?COLORS.danger:COLORS.muted},
-      {text:r.declared.length?`선언 배수: ${declText(r.declared)} ×${r.declMultiplier}`:'선언 배수 없음',size:19,color:r.declared.length?COLORS.danger:COLORS.muted},
-      ...(mult>1?[{text:`미션 ×${mult}`,size:19,color:COLORS.gold,bold:true}]:[]),
-      ...(this.betMult>1?[{text:`판돈 ×${this.betMult}(백무진 제안 수락)`,size:19,color:COLORS.danger,bold:true}]:[]),
-      {text:`최종 ${this.finalPoints(r)}점`,size:34,color:COLORS.gold,bold:true},
-      ...(this.moneyDelta!==0?[{text:`판돈 정산 ${formatWonDelta(this.moneyDelta)}`,size:18,color:this.moneyDelta>0?COLORS.gold:COLORS.danger,bold:true}]:[])];
-  }
   /** 미션 배수: 내가 이겼고 미션 카드를 전부 가졌을 때만(나가리 무효). */
   missionMult(){const r=this.state.result;if(!r||r.outcome!=='승리'||r.winner!==0)return 1;return missionMultiplier(this.mission,this.mission?missionDone(this.mission,new Set(this.state.captured[0].map(c=>c.id))):false,'승리');}
   /** 최종 점수(미션 반영). 돈도 이 점수로 정산한다. */
   finalPoints(r:NonNullable<GameState['result']>){return r.outcome==='승리'?r.final*this.missionMult()*this.betMult:0;}
   /** 상대 소지금(표시용): 프로필 값, 일반 상대는 내 소지금의 1.5배. 0이면 표시하지 않는다. */
   oppMoney():number|undefined{const m=this.profile.money??(this.profile.id==='stranger'?Math.round(this.progress.money*1.5):undefined);return m&&m>0?m:undefined;}
-  /** 결과창 버튼: 시나리오 [새 판 시작/지도로], 연습 [한 판 더/지도로], 장 대결은 승리 [계속] · 패배·나가리 [한 판 더/지도로](1장은 패배 비용 없음). */
+  /** 결과 전표 버튼(요청 19): '확인'은 기존 종료 흐름 그대로(이야기 계속·지도로), 재도전 가능한 대결(시나리오·연습·일반·패배한 장 대결)만 '재도전'이 붙는다. 8장 승리는 선택지 둘이 그대로 종료 흐름이다. */
   resultButtons(won:boolean):ModalButton[]{
-    if(this.launch.scenario)return [{text:'새 판 시작',onTap:()=>this.restart(this.launch.scenario)},{text:'지도로',onTap:()=>this.toJourney()}];
-    if(this.launch.errand&&won)return [{text:'계속',onTap:()=>this.finishErrand()}];
-    if(this.launch.lesson&&won)return [{text:'계속',onTap:()=>this.finishLesson()}];
+    if(this.launch.scenario)return [{text:'재도전',onTap:()=>this.restart(this.launch.scenario)},{text:'확인',onTap:()=>this.toJourney()}];
+    if(this.launch.errand&&won)return [{text:'확인',onTap:()=>this.finishErrand()}];
+    if(this.launch.lesson&&won)return [{text:'확인',onTap:()=>this.finishLesson()}];
     const r=this.state.result, folded=r?.outcome==='승리'&&r.endKind==='fold';
     if(this.chapter?.id==='ch8'&&!this.launch.practice&&won)return [{text:'받아들인다',onTap:()=>this.chooseCh8(true)},{text:'자료만 받는다',onTap:()=>this.chooseCh8(false)}];
-    // 9장은 접어도 완료(접기를 배우는 판)
     // 9장: 접어도 이겨도 완료. 판에서 가르칠 순간이 한 번도 안 왔으면 져도 완료(after 앞에서 가르친다)
-    if(this.chapter?.id==='ch9'&&!this.launch.practice&&(won||folded||!this.foldTaught))return [{text:'계속',onTap:()=>this.continueChapter()}];
-    if(this.launch.gate&&won)return [{text:'계속',onTap:()=>this.finishGate()}];
-    if(this.profile.king&&this.launch.kingFinal&&won)return [{text:'계속',onTap:()=>this.finishKing(true)}];
-    if(this.profile.king&&won)return [{text:'계속',onTap:()=>this.finishKing(false)}];
-    if(this.chapter&&!this.launch.practice&&won)return [{text:'계속',onTap:()=>this.continueChapter()}];
-    return [{text:'한 판 더',onTap:()=>this.again()},{text:'지도로',onTap:()=>this.toJourney()}];
+    if(this.chapter?.id==='ch9'&&!this.launch.practice&&(won||folded||!this.foldTaught))return [{text:'확인',onTap:()=>this.continueChapter()}];
+    if(this.launch.gate&&won)return [{text:'확인',onTap:()=>this.finishGate()}];
+    if(this.profile.king&&this.launch.kingFinal&&won)return [{text:'확인',onTap:()=>this.finishKing(true)}];
+    if(this.profile.king&&won)return [{text:'확인',onTap:()=>this.finishKing(false)}];
+    if(this.chapter&&!this.launch.practice&&won)return [{text:'확인',onTap:()=>this.continueChapter()}];
+    return [{text:'재도전',onTap:()=>this.again()},{text:'확인',onTap:()=>this.toJourney()}];
   }
   openMenu(){if(this.phase!=='hand')return;this.phase='menu';this.draw();}
   /** 획득 패 큰 목록. 내 차례의 안정된 상태(hand)에서만 열리며 게임 흐름을 바꾸지 않는다. */
   openCapturedView(player:number){if(this.phase!=='hand')return;this.capturedViewPlayer=player;this.phase='capturedView';this.draw();}
-  /** 결과창 항목을 차례로 드러낸다. 누르면 전체 즉시. */
-  startResultReveal(total:number){
-    this.resultShown=0;this.resultTimer?.remove(false);
-    const step=this.fxSettings.reduced?Math.round(FX.resultStep*0.5):FX.resultStep;
-    const gen=this.gen;
-    this.resultTimer=this.time.addEvent({delay:step,repeat:total,callback:()=>{if(gen!==this.gen||this.phase!=='result')return;if(this.resultShown<total){this.resultShown++;this.draw();}}});
-  }
-  revealResult(){if(this.phase!=='result')return;this.resultTimer?.remove(false);this.resultShown=99;this.draw();}
   /**
    * 패 나누기 연출(무작위 판). 분배는 GameState 생성자에서 이미 끝났으므로 정해진 결과를 보여주기만 한다: 모든 손패·바닥패를 숨긴 뒤
    * 더미 자리에서 상대 5 → 나 5 → 바닥 4 → 상대 5 → 나 5 → 바닥 4 순(dealOrder)으로 뒷면을 날리고, 나·바닥 패는 도착 뒤 앞면으로 뒤집는다(바닥은 자리 기울기 적용).
@@ -1084,7 +1060,8 @@ class TableScene extends Phaser.Scene {
     this.message='시간 초과: 가장 왼쪽 패를 냅니다.';this.bagOpen=false;
     void this.runPlayerTurn(a);
   }
-  /** 판 종료 화면. 대기 중인 선택과 연출을 모두 버려 상대 턴이 실행되지 않게 한다. 결과 항목은 차례로 드러난다. 상대 반응 대사·표정을 정한다. */
+  /** 판 종료: 대기 중인 선택과 연출을 모두 버려 상대 턴이 실행되지 않게 한 뒤, 정산 전표 연출(src/ui/result.ts)을 띄운다(요청 19).
+   * 전표는 확정 결과 객체만 읽어 표시하고(재계산 없음), 보상·저장 로직(saveOutcome 등)은 그대로다. 상대 반응 대사·표정도 여기서 정한다. */
   showResult(note:string){
     this.stopTurnTimer();
     this.gen++;this.fx.clear();this.hidden.clear();
@@ -1095,8 +1072,28 @@ class TableScene extends Phaser.Scene {
     const ev:DialogEvent=r?.outcome==='승리'?(r.winner===0?'playerWin':'aiWin'):'draw';
     this.resultLine=this.dialog.pick(ev,this.state.turn,this.aiRng)??'';
     this.setMood(EVENT_MOOD[ev]);
-    this.startResultReveal(r?this.resultLines(r).length:2);
     this.draw();
+    const won=r?.outcome==='승리'&&r.winner===0;
+    const rows=receiptRows(!r||r.outcome!=='승리'
+      ?{outcome:'나가리',won:false,winnerName:'',oppName:this.names[1],score:null,base:0,goCount:0,settled:0,baks:[],multiplier:1,declaredText:'',declMultiplier:1,missionMult:1,betMult:1,finalPts:0}
+      :{outcome:'승리',won,winnerName:this.names[r.winner],oppName:this.names[1],endKind:r.endKind,score:this.state.score(r.winner),base:r.base,goCount:r.goCount,settled:r.settled,baks:r.baks,multiplier:r.multiplier,declaredText:declText(r.declared),declMultiplier:r.declMultiplier,missionMult:this.missionMult(),betMult:this.betMult,finalPts:this.finalPoints(r),money:this.stake>0?{delta:this.moneyDelta,text:formatWonDelta(this.moneyDelta)}:undefined});
+    showResultBoard(this,{
+      stamp:!r||r.outcome!=='승리'?{text:'무',color:TOKENS.textDim}:won?{text:'승',color:TOKENS.gold}:{text:'패',color:TOKENS.red},
+      title:!r||r.outcome!=='승리'?'나가리':r.endKind==='fold'?'접음':r.endKind==='caught'?'잡았다!':r.forfeit?'들통':won?'승리':'패배',
+      subtitle:note,quote:this.resultLine||undefined,rows,
+      note:this.notebookNote(),noteIconKey:NOTE_ICON_KEY,
+      buttons:this.resultButtons(won).map(b=>({text:b.text,onTap:b.onTap})),
+      reduced:this.fxSettings.reduced,
+    });
+  }
+  /** 수첩 기록 줄(요청 19): 이번 판에서 실제로 남은 정보만 고른다(보상·저장 로직은 건드리지 않고 표시만). 없으면 undefined → 줄 자체를 생략.
+   * 상대가 몰래 속인 횟수 같은 비공개 정보는 쓰지 않는다 — 잡아서 확인한 습관과 저장된 장소 승수만. */
+  notebookNote():string|undefined{
+    const r=this.state.result;
+    if(!r||r.outcome!=='승리'||this.launch.scenario)return undefined;
+    if(r.winner===0&&r.endKind==='caught')return `${this.names[1]}의 속임수 버릇`;
+    if(r.winner===0&&this.stake>0&&this.launch.placeId&&!this.chapter&&!this.launch.errand)return `${PLACES[this.launch.placeId].name} ${counter(loadProgress(),winsKey(this.launch.placeId))}승째`;
+    return undefined;
   }
   /** 상대 표정을 바꾸고(데이터) 초상화에 작은 움직임을 건다. 일정 시간 뒤 평상시로 돌아온다. */
   setMood(mood:Mood){
