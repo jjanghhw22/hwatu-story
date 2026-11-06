@@ -55,7 +55,7 @@ export type JourneyLaunch = {
   nightAfter?: boolean;
 };
 
-export const SCENE_KEYS = { boot: 'boot', journey: 'journey', story: 'story', table: 'table' } as const;
+export const SCENE_KEYS = { title: 'title', boot: 'boot', journey: 'journey', story: 'story', table: 'table' } as const;
 
 export function goJourney(scene: Phaser.Scene, data: JourneyLaunch = {}) { scene.scene.start(SCENE_KEYS.journey, data); }
 export function playStory(scene: Phaser.Scene, label: string, scenes: Scene[], onDone: StoryLaunch['onDone'], choice?: StoryChoice) {
