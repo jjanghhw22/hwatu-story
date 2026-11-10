@@ -2,6 +2,7 @@
 // 테마: 낡은 동네 이발소. 짙은 초록 천, 어두운 나무, 얇은 황동 테두리, 아이보리·금색 글자. 과한 금색 장식은 쓰지 않는다.
 import Phaser from 'phaser';
 import { COUNT_BADGE, INFO, type Rect } from './layout';
+import { SOUND } from './sound';
 
 export type UI = { scene: Phaser.Scene; layer: Phaser.GameObjects.Container };
 /** 본문 글꼴(로컬 포함 나눔고딕, 없으면 시스템 한글 고딕). */
@@ -103,6 +104,7 @@ export function button(ui: UI, x: number, y: number, w: number, text: string, fn
   if (enabled) face.setInteractive({ useHandCursor: true }).on('pointerdown', () => {
     // 눌림: 면과 글자를 그림자 쪽으로 내려앉혔다가 돌아온다(화면이 바로 다시 그려지면 그대로 사라진다)
     ui.scene.tweens.add({ targets: [face, shine, t], y: '+=3', duration: 50, yoyo: true });
+    SOUND.sfx('tap');
     fn();
   });
   return face;

@@ -313,7 +313,8 @@ export function tableInner(): Rect {
 export const BASE_INNER_H = TABLE_H_BASE - 24;
 export const FLOOR_STRETCH_MAX = 1.3;
 /** 화투판 위쪽 메시지 캡슐(비어 있지 않을 때만). 바닥 자리를 차지하지 않는다. */
-export const TABLE_MESSAGE = { h: 34, alpha: 0.6, size: TEXT_MIN, padX: 16, top: 8 } as const;
+/** 글자 26(요청 21 문구 확대: 차례·기술 결과·획득 안내가 모두 이 캡슐로 나온다). */
+export const TABLE_MESSAGE = { h: 44, alpha: 0.6, size: 26, padX: 18, top: 8 } as const;
 
 /** 바닥패 자리: 더미 중심을 원점으로, 첫 장 중심의 상대 좌표(카드 폭·높이 단위)와 자리별 고정 기울기(도). */
 export type FloorSlot = { ux: number; uy: number; angle: number };

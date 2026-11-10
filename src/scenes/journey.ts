@@ -21,7 +21,7 @@ import { BUILD_TAG, CREDITS, NOT_IMPLEMENTED, RULES } from '../ui/infoTexts';
 import { DESIGN, JOURNEY, MARGIN, journeyNodes } from '../ui/layout';
 import { missingAssets } from '../ui/missing';
 import { type ModalButton, type ModalLine, drawModal } from '../ui/modals';
-import { SoundFx } from '../ui/sound';
+import { SOUND } from '../ui/sound';
 import { COLORS, FONT, type UI, box, button, label, panel } from '../ui/widgets';
 import { makeButton } from '../ui/components';
 import { circlePortraitTexture, preloadPortraits } from '../ui/portrait';
@@ -55,7 +55,7 @@ const UI_DEMO_SCENES: Scene[] = [
 export class JourneyScene extends Phaser.Scene {
   progress!: Progress;
   layer!: Phaser.GameObjects.Container;
-  sfx = new SoundFx(); fxSettings = new FxSettings(); fx!: CardFx;
+  sfx = SOUND; fxSettings = new FxSettings(); fx!: CardFx;
   modal: Modal = 'none'; selected?: PlaceId; launch: JourneyLaunch = {};
   /** 안내 창 내용(사건 결과·아이템 사용 등). */
   notice: { title: string; lines: string[] } = { title: '', lines: [] };
@@ -90,6 +90,7 @@ export class JourneyScene extends Phaser.Scene {
     this.progress = loadProgress();
     this.fx = new CardFx(this, this.add.container(), this.fxSettings);
     this.input.on('pointerdown', () => this.sfx.unlock());
+    this.sfx.bgm('map'); // 지도 BGM(파일 없으면 무음, 요청 21)
     this.events.once('shutdown', () => this.fx.clear());
     // 개발 진단: 9를 누르면 활성 씬 전체의 텍스트·그림 객체(내용, 월드 좌표, depth)를 콘솔 표로 남긴다.
     // 화면에 설명되지 않는 글자가 보일 때 그 순간 눌러서 어느 씬·어느 객체인지 특정하는 용도(렌더링에는 영향 없음).

@@ -4,6 +4,7 @@
 import type Phaser from 'phaser';
 import type { Score } from '../score.ts';
 import { makeButton, makePanel } from './components.ts';
+import { SOUND } from './sound.ts';
 import { COLORS, FONTS, TEXT_STYLES, colorNum } from './theme.ts';
 
 /** 전표 한 줄: 왼쪽 항목·오른쪽 값. big은 굵은 합계 줄(위에 점선 구분). */
@@ -179,6 +180,7 @@ export function showResultBoard(scene: Phaser.Scene, spec: ResultBoardSpec): { c
   for (const ss of steps) for (const o of ss) o.setAlpha(0);
   for (const b of btns) b.container.setVisible(false);
   stamp.setScale(1.4).setAlpha(0);
+  SOUND.sfx('stamp');
   // 1) 도장: 0.3초, 스케일 1.4→1.0, 살짝 기울이며 찍힌다 → 잠깐 뒤 전표 머리로 축소 이동
   tweens.push(scene.tweens.add({ targets: stamp, scale: 1, alpha: 1, angle: STAMP_ANGLE, duration: STAMP_MS, ease: 'Cubic.easeIn' }));
   timers.push(scene.time.delayedCall(STAMP_MS + STAMP_HOLD, () => {

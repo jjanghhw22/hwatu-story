@@ -5,6 +5,7 @@ import { version } from '../../package.json';
 import { STORAGE_KEY, deserialize, resetProgress } from '../story/progress';
 import { makeButton, makeModal } from '../ui/components';
 import { FxSettings } from '../ui/fx';
+import { SOUND } from '../ui/sound';
 import { DESIGN } from '../ui/layout';
 import { loadFailed, noteMissing } from '../ui/missing';
 import { COLORS, TEXT_STYLES, colorNum } from '../ui/theme';
@@ -37,6 +38,9 @@ export class TitleScene extends Phaser.Scene {
   }
   create() {
     const W = DESIGN.width, H = DESIGN.height, cx = W / 2;
+    // 첫 입력에서 소리 활성화(브라우저 정책) + 지도 BGM 요청(파일 없으면 무음, 요청 21)
+    this.input.on('pointerdown', () => SOUND.unlock());
+    SOUND.bgm('map');
     this.add.rectangle(0, 0, W, H, colorNum(COLORS.bg)).setOrigin(0);
     // 1. 배경: 키 일러스트. 없으면 bg색 바탕 + 화투패 뒷면을 크게 흐리게 깐 폴백 연출
     if (this.textures.exists(tKey(KEY_ART))) this.add.image(cx, H / 2, tKey(KEY_ART)).setDisplaySize(W, H);
@@ -97,19 +101,36 @@ export class TitleScene extends Phaser.Scene {
     m.container.add(makeButton(this, mx - bw - 10, by, bw, bh, '지우고 시작', () => { m.close(); resetProgress(); this.scene.start(SCENE_KEYS.boot); }).container);
     m.container.add(makeButton(this, mx + 10, by, bw, bh, '취소', () => m.close()).container);
   }
-  /** 설정 모달: 빈 틀만(음량 슬라이더 자리·데이터 초기화 자리 모두 비활성). 실제 기능은 다음 단계. */
+  /** 설정 모달: 음량 슬라이더(요청 21 — 마스터 볼륨 0~1, 'hwatu.volume.v1' 저장) + 데이터 초기화 자리(비활성). */
   private openSettings() {
     const m = makeModal(this, 480, 340, () => m.close());
     const P = m.panel;
     m.container.add(this.add.text(P.x + P.w / 2, P.y + 44, '설정', TEXT_STYLES.h2).setOrigin(0.5));
-    // 음량 슬라이더 자리(비활성): 트랙과 손잡이만 textDim 계열로 그린다
+    // 음량 슬라이더: 트랙을 누르거나 끌면 즉시 반영(SOUND.setVolume → master gain + 저장)
     m.container.add(this.add.text(P.x + 32, P.y + 100, '음량', TEXT_STYLES.body).setOrigin(0, 0.5));
     const g = this.add.graphics();
     const tx = P.x + 120, ty = P.y + 100, tw = P.w - 152;
-    g.fillStyle(colorNum(COLORS.panelBorder), 1).fillRoundedRect(tx, ty - 3, tw, 6, 3);
-    g.fillStyle(colorNum(COLORS.textDim), 1).fillCircle(tx + tw * 0.7, ty, 10);
+    const drawSlider = () => {
+      g.clear();
+      g.fillStyle(colorNum(COLORS.panelBorder), 1).fillRoundedRect(tx, ty - 3, tw, 6, 3);
+      g.fillStyle(colorNum(COLORS.goldDim), 1).fillRoundedRect(tx, ty - 3, Math.max(6, tw * SOUND.volume), 6, 3);
+      g.fillStyle(colorNum(COLORS.gold), 1).fillCircle(tx + tw * SOUND.volume, ty, 10);
+    };
+    drawSlider();
     m.container.add(g);
-    m.container.add(this.add.text(tx, ty + 24, '준비 중', TEXT_STYLES.caption).setOrigin(0, 0.5));
+    const pct = this.add.text(tx + tw, ty + 26, `${Math.round(SOUND.volume * 100)}%`, TEXT_STYLES.caption).setOrigin(1, 0.5);
+    m.container.add(pct);
+    const hit = this.add.rectangle(tx - 12, ty - 22, tw + 24, 44, 0x000000, 0.001).setOrigin(0).setInteractive();
+    const setFrom = (p: Phaser.Input.Pointer) => {
+      SOUND.unlock();
+      SOUND.setVolume((p.worldX - tx) / tw);
+      drawSlider();
+      pct.setText(`${Math.round(SOUND.volume * 100)}%`);
+    };
+    hit.on('pointerdown', setFrom);
+    hit.on('pointermove', (p: Phaser.Input.Pointer) => { if (p.isDown) setFrom(p); });
+    hit.on('pointerup', () => SOUND.sfx('tap')); // 손을 뗄 때 확인음
+    m.container.add(hit);
     // 데이터 초기화 자리(비활성: makeButton disabled = textDim 글자·goldDim 테두리)
     const reset = makeButton(this, P.x + 32, P.y + 160, P.w - 64, 52, '데이터 초기화', () => { /* 다음 단계 */ });
     reset.setEnabled(false);

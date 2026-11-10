@@ -1,6 +1,7 @@
 // 공통 UI 부품(요청 13): theme.ts 토큰만 사용한다(widgets.ts의 옛 색·서체는 쓰지 않는다). 기존 화면의 교체는 다음 단계.
 // 돌려주는 container를 씬의 레이어에 넣으면 레이어 destroy(true)로 함께 정리된다.
 import type Phaser from 'phaser';
+import { SOUND } from './sound.ts';
 import { COLORS, TEXT_STYLES, colorNum } from './theme.ts';
 
 /** 패널·버튼 모서리 둥글기. */
@@ -41,7 +42,7 @@ export function makeButton(scene: Phaser.Scene, x: number, y: number, w: number,
   redraw();
   hit.setInteractive({ useHandCursor: true });
   hit.on('pointerdown', () => { if (!enabled) return; pressed = true; redraw(); });
-  const release = (fire: boolean) => { if (!enabled || !pressed) return; pressed = false; redraw(); if (fire) onTap(); };
+  const release = (fire: boolean) => { if (!enabled || !pressed) return; pressed = false; redraw(); if (fire) { SOUND.sfx('tap'); onTap(); } };
   hit.on('pointerup', () => release(true));
   hit.on('pointerout', () => release(false));
   return { container, setEnabled(on: boolean) { enabled = on; pressed = false; redraw(); } };

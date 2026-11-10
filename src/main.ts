@@ -50,24 +50,25 @@ import {drawTable} from './ui/table';
 import {type ModalButton,drawCapturedView,drawModal} from './ui/modals';
 import {drawGallery} from './ui/gallery';
 import {missingCardTextures,preloadCardAssets} from './ui/cardAssets';
-import {type BannerStyle,CardFx,FX,FxSettings} from './ui/fx';
+import {CardFx,FX,FxSettings} from './ui/fx';
+import {type CalloutTone,showCallout} from './ui/callout';
 import {receiptRows,showResultBoard} from './ui/result';
 import {loadFailed,noteMissing} from './ui/missing';
 import {SlideTracker} from './ui/slide';
-import {SoundFx} from './ui/sound';
+import {SOUND,type SfxName} from './ui/sound';
 import {VoiceFx} from './ui/voice';
 import {type HandSlot,actionForTap,bakWarnings,bonusCards,captureKind,dealOrder,handDisplay,nearBonuses,newBonuses} from './ui/turnPlan';
-const GUKJIN_ID=CARDS.find(c=>c.gukjin)!.id;
+const GUKJIN_CARD=CARDS.find(c=>c.gukjin)!, GUKJIN_ID=GUKJIN_CARD.id;
 /** 결과 전표의 수첩 아이콘(여정 지도와 같은 파일, 키만 다름). 없으면 theme 색 수첩 모양 폴백. */
 const NOTE_ICON_PATH='assets/ui/icon_note.png', NOTE_ICON_KEY=`table:${NOTE_ICON_PATH}`;
 /** 개발용 AI 판단 로그(브라우저 콘솔 debug 수준). */
 const AI_LOG=true;
 const aiLog=(what:string,why:string)=>{if(AI_LOG)console.debug(`[AI ${what}] ${why}`);};
-const EVENT_TEXT:Record<TurnEvent,string>={'쪽':'쪽!','뻑':'뻑!','따닥':'따닥!','쓸':'쓸!','뻑회수':'뻑 회수!','자뻑회수':'자뻑 회수!','폭탄':'폭탄!'};
-/** 사건별 배너 스타일·시간. 한곳에서 조절한다. */
-const EVENT_BANNER:Record<TurnEvent,{style:BannerStyle;ms:number;size:number;shakeText?:boolean}>={
-  '쪽':{style:'gold',ms:FX.bannerJjok,size:60},'뻑':{style:'ink',ms:FX.bannerPpeok,size:68,shakeText:true},'따닥':{style:'ink',ms:FX.bannerShort,size:62},
-  '쓸':{style:'green',ms:FX.bannerShort,size:64},'뻑회수':{style:'gold',ms:FX.bannerShort,size:52},'자뻑회수':{style:'gold',ms:FX.bannerShort,size:52},'폭탄':{style:'orange',ms:FX.bannerBomb,size:70},
+const EVENT_TEXT:Record<TurnEvent,string>={'쪽':'쪼~옥!','뻑':'뻑!','따닥':'따닥!','쓸':'싹쓸이!','뻑회수':'뻑 회수!','자뻑회수':'자뻑 회수!','폭탄':'폭탄!'};
+/** 사건별 콜아웃 색(기본 gold, 나쁜 사건 red)과 효과음 파일 이름(요청 21). 따닥의 접촉음, 폭탄의 타격음은 연출 쪽에서 이미 낸다. */
+const EVENT_CALLOUT:Record<TurnEvent,{tone:CalloutTone;sfx?:SfxName}>={
+  '쪽':{tone:'gold',sfx:'chok'},'뻑':{tone:'red',sfx:'ppeok'},'따닥':{tone:'gold'},
+  '쓸':{tone:'gold',sfx:'sweep'},'뻑회수':{tone:'gold'},'자뻑회수':{tone:'gold'},'폭탄':{tone:'gold'},
 };
 /** 선언 근거 요약: "1월 흔들기+폭탄, 3월 폭탄". */
 const declText=(d:Declared[])=>d.map(x=>`${x.month}월 ${x.kinds.join('+')}`).join(', ');
@@ -85,7 +86,7 @@ const sleep=(scene:Phaser.Scene,ms:number)=>new Promise<void>(r=>scene.time.dela
  * 컴퓨터 판단은 src/ai.ts·src/beginner.ts의 순수 함수가 공개 정보(publicView)만 보고 하며, 실행은 사람과 같은 runTurn을 쓴다.
  */
 class TableScene extends Phaser.Scene {
-  state!:GameState; layer!:Phaser.GameObjects.Container; fx!:CardFx; sfx=new SoundFx(); voice=new VoiceFx(); fxSettings=new FxSettings(); slides!:SlideTracker;
+  state!:GameState; layer!:Phaser.GameObjects.Container; fx!:CardFx; sfx=SOUND; voice=new VoiceFx(); fxSettings=new FxSettings(); slides!:SlideTracker;
   /** 모달 단계(gukjin/gostop/result/menu/credits/gallery/scenarios/capturedView/rules/devinfo)에서는 바닥·손패 입력을 받지 않는다. */
   phase:Phase='dealing';
   message='';
@@ -249,15 +250,16 @@ class TableScene extends Phaser.Scene {
     this.phase=sc?'hand':'dealing';this.message=sc?`[시나리오] ${sc.title}: ${sc.desc}`:'';
     this.selectable=[];this.peek=false;this.turnOwner=0;this.floorSlots=new Map();this.hidden=new Set();
     this.choiceResolve=undefined;this.gukjinResolve=undefined;this.gostopResolve=undefined;
-    this.gen++;this.restarting=false;this.resultLine='';
+    this.gen++;this.restarting=false;this.resultLine='';this.bakWarned.clear();
     this.mood='normal';this.moodTimer=undefined;this.oppPortrait=undefined;
     this.aiActions=0;this.dialog.reset();this.aiRng=seededRng((Date.now()^Math.floor(Math.random()*0x7fffffff))>>>0);
     this.shownBase=[this.state.baseScore(0),this.state.baseScore(1)];
     this.fx=new CardFx(this,this.add.container(),this.fxSettings);
     this.slides=new SlideTracker(this,()=>this.fxSettings.ms(FX.slide));
     this.missingTextures=missingCardTextures(this.textures);if(this.missingTextures.length)console.warn('카드 그림 누락 id:',this.missingTextures);
-    // 첫 사용자 입력 뒤 소리 활성화(브라우저 정책)
+    // 첫 사용자 입력 뒤 소리 활성화(브라우저 정책). 대국 BGM(파일 없으면 무음, 요청 21)
     this.input.on('pointerdown',()=>this.sfx.unlock());
+    this.sfx.bgm('match');
     // 개발 단축키(요청 16): 1~4로 손목 상태 전환(normal/braced/limited/healed) → 기술 패널 상태 확인. 진행 저장에도 반영(시나리오 모드 제외)
     // 0: 모든 기술 임시 보유 토글(저장 안 함) — 어느 장에서든 기술 패널·게이지·보호대 오버레이를 눈으로 확인하는 용도
     this.input.keyboard?.on('keydown',(e:KeyboardEvent)=>{
@@ -376,7 +378,7 @@ class TableScene extends Phaser.Scene {
     if(id==='swap'){this.phase='swap';this.swapPick=undefined;this.message='';this.draw();return;}
     this.focus=spendFocus(this.focus,this.skillCost(id));sk.uses-=1;this.consumeCoffee();this.noteSkillUse(id);
     if(this.blockSkill(id))return;
-    if(id==='fold'){this.stopTurnTimer();this.state.forfeit(0,{kind:'fold'});this.showResult('불리한 판을 접었습니다.');return;}
+    if(id==='fold'){this.stopTurnTimer();this.sfx.sfx('fold');this.state.forfeit(0,{kind:'fold'});this.showResult('불리한 판을 접었습니다.');return;}
     if(id==='readThrough'){this.watching=true;this.message=`${SKILLS.readThrough.name}: 다음 상대 차례를 지켜본다.`;}
     if(id==='eye'){
       this.peek=true;this.peekCount=this.eyePlus?2:1;
@@ -610,7 +612,7 @@ class TableScene extends Phaser.Scene {
     }
     ui.layer.add(this.add.text(gx+segW*3+segGap*2+10,gy+segH/2,risk.name,{fontFamily:FONTS.body,fontSize:16,fontStyle:'bold',color:risk.level===3?TOKENS.red:TOKENS.text}).setOrigin(0,0.5));
     const picked=this.swapPick!==undefined?this.state.hands[0].find(c=>c.id===this.swapPick):undefined;
-    ui.layer.add(this.add.text(x+w/2,y+72,picked?`바꿀 패: ${picked.month}월 ${picked.name}`:'바꿀 손패를 고르세요',{fontFamily:FONTS.body,fontSize:16,color:picked?TOKENS.text:TOKENS.textDim}).setOrigin(0.5));
+    ui.layer.add(this.add.text(x+w/2,y+72,picked?`바꿀 패: ${picked.month}월 ${picked.name}`:'바꿀 손패를 고르세요',{fontFamily:FONTS.body,fontSize:20,color:picked?TOKENS.text:TOKENS.textDim}).setOrigin(0.5));
     const bw=130,bh=40,by=y+h-bh-12;
     const run=makeButton(this,x+w/2-bw-8,by,bw,bh,'실행',()=>{const id=this.swapPick;if(id!==undefined)void this.doSwap(id);});
     run.setEnabled(this.swapPick!==undefined);
@@ -630,6 +632,31 @@ class TableScene extends Phaser.Scene {
     const ok=makeButton(this,p.x+p.w/2-bw-10,by,bw,bh,'확인',()=>{this.foldAsk=false;this.useSkill('fold');});
     const no=makeButton(this,p.x+p.w/2+10,by,bw,bh,'취소',close);
     ui.layer.add(ok.container);ui.layer.add(no.container);
+  }
+  /** 카드가 주인공인 선택 모달(요청 21 ④): 큰 카드(180×270) + 큰 버튼 또는 카드 자체 탭. 바닥 선택·국진 선택이 같은 문법을 쓴다.
+   * makeModal의 전체 화면 막이 판 조작을 차단한다. '연출 줄이기'와 무관하게 항상 이 모달을 쓴다(연출이 아니라 조작성). */
+  drawCardAsk(ui:UI,o:{title:string;cards:Card[];onCard?:(c:Card)=>void;caption?:string;buttons?:{text:string;onTap:()=>void}[]}){
+    const CW=180,CH=270,GAP=36,PAD=40;
+    const btns=o.buttons??[];
+    const w=Math.max(560,o.cards.length*CW+(o.cards.length-1)*GAP+PAD*2);
+    const capH=o.caption?56:16;
+    const h=76+CH+capH+btns.length*(56+12)+PAD;
+    const m=makeModal(this,w,h);
+    ui.layer.add(m.container);
+    const p=m.panel;
+    ui.layer.add(this.add.text(p.x+p.w/2,p.y+44,o.title,{fontFamily:FONTS.title,fontSize:28,color:TOKENS.text}).setOrigin(0.5));
+    const total=o.cards.length*CW+(o.cards.length-1)*GAP, x0=p.x+(p.w-total)/2, cy=p.y+76;
+    o.cards.forEach((c,i)=>drawCardFace(ui,{x:x0+i*(CW+GAP),y:cy,w:CW,h:CH},c,{selected:!!o.onCard,onTap:o.onCard?()=>o.onCard!(c):undefined}));
+    let by=cy+CH+12;
+    if(o.caption){ui.layer.add(this.add.text(p.x+p.w/2,by+14,o.caption,{fontFamily:FONTS.body,fontSize:18,color:TOKENS.textDim,wordWrap:{width:p.w-PAD*2}}).setOrigin(0.5,0));by+=capH;}
+    else by+=4;
+    for(const b of btns){const btn=makeButton(this,p.x+PAD,by,p.w-PAD*2,56,b.text,b.onTap);ui.layer.add(btn.container);by+=56+12;}
+  }
+  /** 바닥 같은 월 2장 중 고르기(요청 21 ④): 바닥을 직접 탭하는 대신 가운데 큰 선택창. 시간 초과(속공전)는 기존대로 첫 장. */
+  drawChoiceAsk(ui:UI){
+    const cards=this.selectable.map(id=>this.state.table.find(c=>c.id===id)).filter((c):c is Card=>!!c);
+    if(!cards.length)return;
+    this.drawCardAsk(ui,{title:'어느 패를 가져올까?',cards,onCard:c=>this.pick(c.id),caption:`${cards[0].month}월 — 패를 눌러 가져간다`});
   }
   /** 고/스톱 요약 슬롯을 보여줄 수 있는가: 셈하기·위험 계산에 해당하는 기술(눈썰미·기억력) 보유 시에만(요청 16). */
   hasInsight(){return this.skills.some(x=>x.id==='eye'||x.id==='memory');}
@@ -654,11 +681,14 @@ class TableScene extends Phaser.Scene {
         {text:'모른 척한다',onTap:()=>this.decideCatch('ignore')},
       ]});
     }
+    // 바닥 같은 월 2장 선택(요청 21 ④): 바닥 탭 대신 가운데 큰 선택창
+    if(this.phase==='choice')this.drawChoiceAsk(ui);
     if(this.phase==='gukjin'){
       const p=s.previewGukjin(0);
-      drawModal(ui,{title:'9월 국진을 어떻게 사용할까요?',card:GUKJIN_ID,lines:[{text:'한 번 정하면 이 판에서는 바꿀 수 없습니다. 열끗과 피 중 한쪽에만 계산됩니다.'}],buttons:[
-        {text:`열끗으로 사용  ·  예상 합계 ${p.열끗}점`,onTap:()=>this.decideGukjin('열끗'),fill:0xe8c84a},
-        {text:`쌍피로 사용  ·  예상 합계 ${p.피}점`,onTap:()=>this.decideGukjin('피'),fill:0xe0875a},
+      // 국진 선택도 같은 모달 문법(카드 크게 + 큰 버튼 2개, 요청 21 ④)
+      this.drawCardAsk(ui,{title:'9월 국진을 어떻게 사용할까요?',cards:[GUKJIN_CARD],caption:'한 번 정하면 이 판에서는 바꿀 수 없습니다. 열끗과 피 중 한쪽에만 계산됩니다.',buttons:[
+        {text:`열끗으로 사용  ·  예상 합계 ${p.열끗}점`,onTap:()=>this.decideGukjin('열끗')},
+        {text:`쌍피로 사용  ·  예상 합계 ${p.피}점`,onTap:()=>this.decideGukjin('피')},
       ]});
     }
     if(this.phase==='gostop'){
@@ -684,7 +714,7 @@ class TableScene extends Phaser.Scene {
       drawModal(ui,{title:'메뉴',lines:[{text:`소리: ${on?'켜짐':'꺼짐'}${on&&!this.sfx.ready?' (첫 터치 뒤 활성화)':''}  ·  연출 줄이기: ${reduced?'켜짐':'꺼짐'}`}],buttons:[
         {text:'새 판 시작',onTap:()=>this.restart()},
         {text:'지도로 (이 판 포기)',onTap:()=>this.toJourney()},
-        {text:on?'소리 끄기':'소리 켜기',onTap:()=>{if(this.phase!=='menu')return;this.sfx.setEnabled(!on);this.voice.enabled=!on;if(!on)this.sfx.play('deal');this.draw();}},
+        {text:on?'소리 끄기':'소리 켜기',onTap:()=>{if(this.phase!=='menu')return;this.sfx.setEnabled(!on);this.voice.enabled=!on;if(!on)this.sfx.sfx('place');this.draw();}},
         {text:reduced?'연출 줄이기 끄기':'연출 줄이기 켜기',onTap:()=>{if(this.phase!=='menu')return;this.fxSettings.setReduced(!reduced);this.draw();}},
         {text:'규칙 안내',onTap:()=>this.switchModal('menu','rules')},
         {text:'제작자·출처',onTap:()=>this.switchModal('menu','credits')},
@@ -772,7 +802,7 @@ class TableScene extends Phaser.Scene {
         :this.lastFloor.cards[s.table.indexOf(card)];
       arrivals.push((async()=>{
         await this.fx.fly(sp,dest,dealMs);if(gen!==this.gen)return;
-        this.sfx.play('deal');
+        this.sfx.sfx('place');
         if(to!=='opp'){await this.fx.flipTo(sp,card);if(gen!==this.gen)return;}
         this.hidden.delete(card.id);this.draw();this.fx.remove(sp);
       })());
@@ -796,13 +826,13 @@ class TableScene extends Phaser.Scene {
     this.mission=drawMission(seededRng(((this.state.roundId*7919)^Date.now())>>>0),new Set(this.state.hands[0].map(c=>c.id)),Math.max(1,no));
     this.missionHit=false;
   }
-  /** 미션 달성 순간(내 획득패에 전부 들어온 처음) 금색 "미션!" 배너. 패널은 draw()가 상태로 그린다. */
+  /** 미션 달성 순간(내 획득패에 전부 들어온 처음) 금색 "미션!" 콜아웃. 패널은 draw()가 상태로 그린다. */
   async checkMission(){
     if(!this.mission||this.missionHit)return;
     if(!missionDone(this.mission,new Set(this.state.captured[0].map(c=>c.id))))return;
     this.missionHit=true;this.draw();
-    const c=this.tableCenter();this.sfx.play('combo');
-    await this.fx.banner('미션!',c.x,c.y,FX.bannerCombo,{style:'gold',size:56});
+    this.sfx.play('combo');
+    await this.callout('미션!');
   }
   // ---- 의심도 ----
   /**
@@ -836,8 +866,7 @@ class TableScene extends Phaser.Scene {
     this.phase='busy';this.message='들통!';this.draw();
     s.forfeit(0);this.voice.play('스톱');
     const veil=this.add.rectangle(0,0,DESIGN.width,DESIGN.height,0x7a0a0a,0.35).setOrigin(0).setDepth(900);
-    const c=this.tableCenter();
-    await this.fx.banner('들통!',c.x,c.y,this.fxSettings.ms(FX.bust),{style:'ink',size:72,shakeText:true});
+    await this.callout('들통!','red');
     veil.destroy();if(gen!==this.gen)return;
     if(!this.launch.scenario&&this.stake>0&&this.launch.placeId&&!this.chapter)saveProgress(banPlace(loadProgress(),this.launch.placeId));
     this.showResult('속임수가 들통나 즉시 패배했습니다.');
@@ -890,7 +919,7 @@ class TableScene extends Phaser.Scene {
       this.fx.remove(sp); // 준 패는 더미 윗장이 된다(더미는 뒷면이라 그대로 사라진다)
       const dk=this.fx.spawn(null,this.lastFloor.deck);
       await this.fx.moveTo(dk,this.holdRect());if(gen!==this.gen)return;
-      await this.fx.flipTo(dk,taken);if(gen!==this.gen)return;this.sfx.play('flip');
+      await this.fx.flipTo(dk,taken);if(gen!==this.gen)return;this.sfx.sfx('flip');
       await this.fx.fly(dk,this.handRects(0,[taken])[0]);if(gen!==this.gen)return;
       this.fx.remove(dk);this.hidden.delete(taken.id);
       this.message=`바꿔치기 성공: ${given.month}월 ${given.name} ↔ ${taken.month}월 ${taken.name}`;this.draw();
@@ -921,13 +950,13 @@ class TableScene extends Phaser.Scene {
     const dest=cards.map((_,i)=>({x:c.x-(w*3+4)/2+i*(w+2),y:c.y-h/2+Math.abs(i-1)*10,w,h}));
     const angles=[-9,0,9];
     const sprites=cards.map((card,i)=>this.fx.spawn(card,from[i]));
-    this.sfx.play('flip');
+    this.sfx.sfx('flip');
     await Promise.all(sprites.flatMap((sp,i)=>[this.fx.moveTo(sp,dest[i]),this.fx.tiltTo(sp,angles[i])]));if(gen!==this.gen)return;
-    await this.fx.banner('흔들기!',c.x,c.y-h/2-70,FX.bannerShake,{style:'gold',size:60});if(gen!==this.gen)return;
+    await this.callout('흔들!','gold',player);if(gen!==this.gen)return;
     await sleep(this,this.fxSettings.ms(250));if(gen!==this.gen)return;
     await Promise.all(sprites.flatMap((sp,i)=>[this.fx.moveTo(sp,from[i]),this.fx.tiltTo(sp,0)]));if(gen!==this.gen)return;
     sprites.forEach(sp=>this.fx.remove(sp));
-    this.sfx.play('deal');
+    this.sfx.sfx('place');
     if(player===0&&standalone){this.phase='hand';this.draw();}
   }
   /** 종 흔들림: 각도 −18°↔+18° 왕복, 총 FX.bell. */
@@ -1008,8 +1037,7 @@ class TableScene extends Phaser.Scene {
     this.fx.clear();this.hidden.clear();this.selectable=[];this.choiceResolve=undefined;this.gukjinResolve=undefined;this.gostopResolve=undefined;
     s.forfeit(1,{kind:'caught'});this.phase='busy';this.message='잡았다!';this.setMood('defeated');this.draw();
     const veil=this.add.rectangle(0,0,DESIGN.width,DESIGN.height,0xe0b64f,0.28).setOrigin(0).setDepth(900);
-    const c=this.tableCenter();
-    await this.fx.banner('잡았다!',c.x,c.y,this.fxSettings.ms(FX.bust),{style:'gold',size:72});
+    await this.callout('잡았다!');
     veil.destroy();if(gen!==this.gen)return;
     this.showResult(`${this.names[1]}의 속임수를 잡았습니다.`);
   }
@@ -1078,6 +1106,7 @@ class TableScene extends Phaser.Scene {
     const rows=receiptRows(!r||r.outcome!=='승리'
       ?{outcome:'나가리',won:false,winnerName:'',oppName:this.names[1],score:null,base:0,goCount:0,settled:0,baks:[],multiplier:1,declaredText:'',declMultiplier:1,missionMult:1,betMult:1,finalPts:0}
       :{outcome:'승리',won,winnerName:this.names[r.winner],oppName:this.names[1],endKind:r.endKind,score:this.state.score(r.winner),base:r.base,goCount:r.goCount,settled:r.settled,baks:r.baks,multiplier:r.multiplier,declaredText:declText(r.declared),declMultiplier:r.declMultiplier,missionMult:this.missionMult(),betMult:this.betMult,finalPts:this.finalPoints(r),money:this.stake>0?{delta:this.moneyDelta,text:formatWonDelta(this.moneyDelta)}:undefined});
+    if(r&&r.outcome==='승리')this.sfx.sfx(won?'win':'lose'); // 파일이 생기면 울린다(없으면 무음)
     showResultBoard(this,{
       stamp:!r||r.outcome!=='승리'?{text:'무',color:TOKENS.textDim}:won?{text:'승',color:TOKENS.gold}:{text:'패',color:TOKENS.red},
       title:!r||r.outcome!=='승리'?'나가리':r.endKind==='fold'?'접음':r.endKind==='caught'?'잡았다!':r.forfeit?'들통':won?'승리':'패배',
@@ -1145,6 +1174,20 @@ class TableScene extends Phaser.Scene {
     return capturedRects(player===0?REGIONS.myCaptured:REGIONS.oppCaptured,groups).rects.get(card.id)!;
   }
   tableCenter(){const t=REGIONS.table;return {x:t.x+t.w/2,y:t.y+t.h/2};}
+  /** 사건 콜아웃(요청 21): 화투판 가운데 도장 문구. 상대(player 1) 사건은 화투판 위쪽에 0.7배로. */
+  callout(text:string,tone:CalloutTone='gold',player=0){
+    const c=this.tableCenter();
+    return showCallout(this,text,{tone,small:player===1,x:c.x,y:player===1?REGIONS.table.y+70:c.y,reduced:this.fxSettings.reduced});
+  }
+  /** 박 위험 승격(요청 21 문구 확대 ③): 내가 피박·광박 위험에 새로 들어서면 한 번만 붉은 콜아웃. */
+  bakWarned=new Set<string>();
+  async checkBakWarn(){
+    for(const w of bakWarnings(this.state,0)){
+      if(this.bakWarned.has(w))continue;
+      this.bakWarned.add(w);
+      await this.callout(`${w} 위험!`,'red');
+    }
+  }
   /** 획득 패 패널 가운데(족보 배너 자리). */
   capturedCenter(player:number){const r=player===0?REGIONS.myCaptured:REGIONS.oppCaptured;return {x:r.x+r.w/2,y:r.y+r.h/2};}
   /**
@@ -1174,7 +1217,7 @@ class TableScene extends Phaser.Scene {
       const sprite=this.fx.spawn(player===0?card:null,from);sprites.set(card.id,sprite);
       if(player===0){this.hidden.add(card.id);this.draw();this.sfx.play('select');await this.fx.lift(sprite);if(gen!==this.gen)return null;this.hidden.delete(card.id);}
       s.hands[player].splice(action.index,1);this.slides.forget(`hand:${card.id}`);this.draw();
-      if(player===1){await this.fx.moveTo(sprite,this.holdRect());if(gen!==this.gen)return null;await this.fx.flipTo(sprite,card);if(gen!==this.gen)return null;this.sfx.play('flip');}
+      if(player===1){await this.fx.moveTo(sprite,this.holdRect());if(gen!==this.gen)return null;await this.fx.flipTo(sprite,card);if(gen!==this.gen)return null;this.sfx.sfx('flip');}
       let handTarget:number|undefined;
       if(an.needsChoice){
         if(action.target!==undefined&&an.matches.some(c=>c.id===action.target))handTarget=action.target;
@@ -1187,7 +1230,7 @@ class TableScene extends Phaser.Scene {
       // 2) 손패 날리기 + 접촉
       const hr=landRect(plan.landings[0]);placed.set(card.id,hr);
       await this.fx.fly(sprite,hr);if(gen!==this.gen)return null;
-      this.sfx.play('deal');await this.fx.impact(sprite,hr);if(gen!==this.gen)return null;
+      this.sfx.sfx('place');await this.fx.impact(sprite,hr);if(gen!==this.gen)return null;
     }else if(action.kind==='bomb'){
       plan=s.planBomb(player,action.month);
       const cards=plan.bombCards;
@@ -1197,19 +1240,18 @@ class TableScene extends Phaser.Scene {
       const sps=cards.map((c,i)=>{const sp=this.fx.spawn(player===0?c:null,from[i]);sprites.set(c.id,sp);return sp;});
       if(player===1){
         await Promise.all(sps.map((sp,i)=>this.fx.moveTo(sp,this.holdRect(i-1))));if(gen!==this.gen)return null;
-        await Promise.all(sps.map((sp,i)=>this.fx.flipTo(sp,cards[i])));if(gen!==this.gen)return null;this.sfx.play('flip');
+        await Promise.all(sps.map((sp,i)=>this.fx.flipTo(sp,cards[i])));if(gen!==this.gen)return null;this.sfx.sfx('flip');
       }
       // 세 장을 짧은 간격으로 연속 접촉. 마지막 장에서 주황 충격파와 최대 100ms의 약한 화면 흔들림(연출 줄이기에서는 없음). 전체 화면 섬광은 없다.
       for(let i=0;i<cards.length;i++){
         const l=plan.landings[i];const r=landRect(l);placed.set(cards[i].id,r);
         await this.fx.fly(sps[i],r,this.fxSettings.ms(FX.fly));if(gen!==this.gen)return null;
-        if(i<cards.length-1){this.sfx.play('deal');await this.fx.impact(sps[i],r);}
+        if(i<cards.length-1){this.sfx.sfx('place');await this.fx.impact(sps[i],r);}
         else{this.sfx.play('bomb');this.voice.play('폭탄');this.fx.shakeScreen();await this.fx.impact(sps[i],r,2);}
         if(gen!==this.gen)return null;
       }
-      const c=this.tableCenter(), eb=EVENT_BANNER['폭탄'];
       if(player===0)this.say('playerBomb');
-      await this.fx.banner(EVENT_TEXT['폭탄'],c.x,c.y,eb.ms,{style:eb.style,size:eb.size});if(gen!==this.gen)return null;
+      await this.callout(EVENT_TEXT['폭탄'],EVENT_CALLOUT['폭탄'].tone,player);if(gen!==this.gen)return null;
       bannerDone=['폭탄'];
     }else{
       plan=s.planFlip(player);
@@ -1221,7 +1263,7 @@ class TableScene extends Phaser.Scene {
       const deckSprite=this.fx.spawn(null,this.lastFloor.deck);sprites.set(D.id,deckSprite);
       await this.fx.moveTo(deckSprite,this.holdRect(),this.fxSettings.ms(FX.flip/2));if(gen!==this.gen)return null;
       await this.fx.flipTo(deckSprite,D);if(gen!==this.gen)return null;
-      this.sfx.play('flip');
+      this.sfx.sfx('flip');
       if(plan.needsDeckChoice){
         const deckTarget=await pickChoice(plan.needsDeckChoice,D);if(gen!==this.gen)return null;
         plan=s.replanDeckChoice(plan,deckTarget); // 손패는 연출용으로 이미 뺐으므로 원래 계획의 카드로 다시 계획
@@ -1231,22 +1273,22 @@ class TableScene extends Phaser.Scene {
       await this.fx.fly(deckSprite,dr);if(gen!==this.gen)return null;
       if(plan.events.includes('따닥')){
         // 따닥: 카드 접촉에 맞춘 두 번의 작은 충격. 착지음은 2회 타격음 하나로 대신해 같은 접촉음이 겹치지 않는다.
-        this.sfx.play('ttadak');this.voice.play('따닥');await this.fx.impact(deckSprite,dr);if(gen!==this.gen)return null;
+        this.sfx.sfx('chok');this.voice.play('따닥');await this.fx.impact(deckSprite,dr);if(gen!==this.gen)return null;
         const hs=plan.card?sprites.get(plan.card.id):undefined;
         if(hs?.active)await this.fx.impact(hs,placed.get(plan.card!.id)!);else await this.fx.impact(deckSprite,dr);
-      }else{this.sfx.play('deal');await this.fx.impact(deckSprite,dr);}
+      }else{this.sfx.sfx('place');await this.fx.impact(deckSprite,dr);}
       if(gen!==this.gen)return null;
       // 쪽: 일치한 두 패(손패·더미 패) 사이의 짧은 금빛 섬광
       if(plan.events.includes('쪽')&&plan.card){this.fx.flash(placed.get(plan.card.id)!,dr);this.voice.play('쪽');}
     }
-    // 4) 사건 배너(순서대로, 겹치지 않게). 이미 보여준 것(폭탄)과 쓸(획득 뒤)은 제외. 뻑은 세 장을 바닥에 남긴 채 먹물 배경과 글자 떨림.
-    const c=this.tableCenter();
+    // 4) 사건 콜아웃(요청 21, 순서대로 겹치지 않게). 이미 보여준 것(폭탄)과 쓸(획득 뒤)은 제외. 상대 사건은 위쪽에 작게.
     for(const ev of plan.events){
       if(bannerDone.includes(ev)||ev==='쓸')continue;
-      const eb=EVENT_BANNER[ev];
+      const ec=EVENT_CALLOUT[ev];
       if(player===0&&ev==='쪽')this.say('playerJjok');
       if(player===1&&ev==='뻑')this.say('aiPpeok');
-      await this.fx.banner(EVENT_TEXT[ev],c.x,c.y,eb.ms,{style:eb.style,size:eb.size,shakeText:eb.shakeText});if(gen!==this.gen)return null;
+      if(ec.sfx)this.sfx.sfx(ec.sfx);
+      await this.callout(EVENT_TEXT[ev],ec.tone,player);if(gen!==this.gen)return null;
     }
     // 5) 획득 묶음: 겹쳐진 상태를 잠깐 강조 → 해당 분류의 최종 자리로 함께 이동. 바닥에 남는 패(일반 놓기·뻑)는 그대로 둔다(금색 이동 없음).
     if(plan.captureGroups.length){
@@ -1264,9 +1306,9 @@ class TableScene extends Phaser.Scene {
       });
       this.draw();
       await Promise.all(flights);if(gen!==this.gen)return null;
-      this.sfx.play('capture');
+      this.sfx.sfx('capture');
       // 쓸: 바닥을 비운 사실이 보인 다음 표시(새 패가 깔리기 전, 이 턴 안에서)
-      if(sseul){const eb=EVENT_BANNER['쓸'];this.voice.play('싹쓸이');if(player===0)this.say('playerSseul');await this.fx.banner(EVENT_TEXT['쓸'],c.x,c.y,eb.ms,{style:eb.style,size:eb.size});if(gen!==this.gen)return null;}
+      if(sseul){this.voice.play('싹쓸이');if(player===0)this.say('playerSseul');this.sfx.sfx('sweep');await this.callout(EVENT_TEXT['쓸'],EVENT_CALLOUT['쓸'].tone,player);if(gen!==this.gen)return null;}
     }
     for(const sp of sprites.values())this.fx.remove(sp);
     // 6) 상태 적용(한 번). 날아간 카드는 패널의 최종 자리에서 바로 나타난다.
@@ -1283,9 +1325,10 @@ class TableScene extends Phaser.Scene {
     for(const name of newBonuses(scoreBefore,scoreAfter)){
       const rects=bonusCards(scoreAfter,name).map(x=>this.lastCaptured[player].rects.get(x.id)).filter((r):r is Rect=>!!r);
       await this.fx.highlight(rects,this.fxSettings.ms(FX.highlight*2),0xfff1c2);if(gen!==this.gen)return null;
-      const cc=this.capturedCenter(player);this.sfx.play('combo');
+      this.sfx.play('combo');
       if(player===0)this.say('playerCombo');
-      await this.fx.banner(`${name}!`,cc.x,cc.y,FX.bannerCombo,{style:'gold',size:48});if(gen!==this.gen)return null;
+      // 족보 완성은 점수가 변하는 중요 사건이라 콜아웃으로 승격(요청 21 ③)
+      await this.callout(`${name}!`,'gold',player);if(gen!==this.gen)return null;
     }
     this.pulseScores();
     // 9) 상대 피 이동: 상대 획득 칸에서 내 획득 칸으로 한 장씩. 점수가 줄어든 쪽도 실제 감소량을 표시한다.
@@ -1302,7 +1345,7 @@ class TableScene extends Phaser.Scene {
         }
         this.draw();
         await Promise.all(flights);if(gen!==this.gen)return null;
-        this.sfx.play('capture');
+        this.sfx.sfx('capture');
         s.stealPi(other,player,plan.piSteals);this.hidden.clear();
         this.message=player===0?`상대 피 ${cards.length}장을 가져왔습니다.`:`${this.names[1]}이 내 피 ${cards.length}장을 가져갔습니다.`;
       }else this.message='가져올 상대 피가 없습니다.';
@@ -1326,6 +1369,7 @@ class TableScene extends Phaser.Scene {
     const plan=await this.runTurn(0,action,(cands,card)=>this.askChoice(cands.map(c=>c.id),`${card.month}월: 가져올 바닥패를 선택하세요.`));
     if(!plan||gen!==this.gen)return;
     this.noteCaptures(plan);this.checkTeachFold();
+    await this.checkBakWarn();if(gen!==this.gen)return;
     await this.checkKingStage();if(gen!==this.gen||s.over)return;
     // 10) 고/스톱: 카드·피 이동과 점수 갱신이 끝난 최종 상태로 판단
     if(s.over)return;
@@ -1343,9 +1387,10 @@ class TableScene extends Phaser.Scene {
       this.taunt=afterGoStop(this.taunt,d,taunted);this.tauntNow=false;
       if(d==='stop'){s.declareStop(0);this.voice.play('스톱');this.showResult('스톱을 선택했습니다.');return;}
       const n=s.declareGo(0);this.message=`${n}고! 기본 점수가 ${s.goBase[0]}점보다 올라야 다시 고/스톱을 선택할 수 있습니다.`;this.draw();
-      // 실제 고 횟수(상태의 goCount)를 붉은 붓터치로 크게
-      const c=this.tableCenter();this.voice.play('고');this.say('playerGo');
-      await this.fx.banner(`${s.goCount[0]}고!`,c.x,c.y,FX.bannerGo,{style:'red',size:72});if(gen!==this.gen)return;
+      // 실제 고 횟수(상태의 goCount)를 콜아웃으로 크게. 2고부터는 긴장 BGM(파일 없으면 기존 곡 유지)
+      this.voice.play('고');this.say('playerGo');this.sfx.sfx('go');
+      if(n>=2)this.sfx.bgm('tension');
+      await this.callout(`${s.goCount[0]}고!`);if(gen!==this.gen)return;
     }
     if(s.settleIfExhausted()){this.showResult('양쪽 행동이 모두 소진되었습니다.');return;}
     await this.runOpponentTurn();
@@ -1411,12 +1456,15 @@ class TableScene extends Phaser.Scene {
       const d=this.opponent.decideGoStop(publicView(s,1));aiLog(d.decision==='go'?'고':'스톱',d.reason);
       if(d.decision==='stop'){s.declareStop(1);this.showResult(`${this.names[1]}이 스톱했습니다.`);return;}
       const n=s.declareGo(1);this.message=`${this.names[1]}: ${n}고!`;this.draw();
-      const c=this.tableCenter();await this.fx.banner(`${this.names[1]} ${s.goCount[1]}고!`,c.x,c.y,FX.bannerGo,{style:'red',size:52});if(gen!==this.gen)return;
+      this.sfx.sfx('go');
+      if(n>=2)this.sfx.bgm('tension');
+      await this.callout(`${s.goCount[1]}고!`,'gold',1);if(gen!==this.gen)return;
     }
     if(s.settleIfExhausted()){this.showResult('양쪽 행동이 모두 소진되었습니다.');return;}
     if(s.remainingActions(0)===0){s.turn+=1;await this.runOpponentTurn();return;} // 내 행동이 없으면 상대가 이어서 진행
     this.ignoreBluffThisTurn=false; // 시선 돌리기는 '이번 턴'까지
     this.checkTeachFold();
+    await this.checkBakWarn();if(gen!==this.gen)return;
     await this.checkKingStage();if(gen!==this.gen||s.over)return;
     this.phase='hand';this.turnOwner=0;this.message='내 차례입니다. 손패나 기회 패를 누르세요.';this.draw();
     this.startTurnTimer('hand');
